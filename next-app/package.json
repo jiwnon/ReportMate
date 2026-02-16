@@ -10,6 +10,7 @@
     "lint": "next lint",
     "db:generate": "supabase gen types typescript --project-id $SUPABASE_PROJECT_ID > src/types/database.gen.ts",
     "db:migrate": "supabase db push",
+    "seed:templates": "node scripts/seed-templates.mjs",
     "cf:pages:deploy": "npx wrangler pages deploy ./out --project-name=grade-helper",
     "cf:check": "npx wrangler check",
     "cf:types": "npx wrangler types"

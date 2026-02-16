@@ -1,25 +1,35 @@
 /**
- * 초등 평어 도우미 - 공통 타입 정의
- * MVP: 1학년 1학기 국어·수학. DB는 templates만 사용.
+ * ReportMate MVP - DB 스키마 타입
+ * level: 1/2/3 (상/중/하 대체)
  */
 
-/** 등급: 상/중/하 */
-export type Level = '상' | '중' | '하';
+export type Level = '1' | '2' | '3';
 
-/** 단원별·등급별 평어 문장 템플릿 (DB templates) */
-export interface Template {
-  id: number;
-  grade: number;
-  semester: number;
+export interface Area {
+  id: string;
   subject: string;
-  unit: string;
-  level: Level;
-  sentence: string;
-  created_at?: string;
+  name: string;
+  order_index: number;
 }
 
-/** MVP: 1학년 1학기 과목 */
-export type SubjectCode = '국어' | '수학';
+export interface Template {
+  id: string;
+  area_id: string;
+  level: Level;
+  sentence: string;
+}
 
-/** 1학년 1학기 과목 목록 */
+export interface Student {
+  id: string;
+  number: number;
+  name: string;
+}
+
+export interface Rating {
+  student_id: string;
+  area_id: string;
+  level: Level;
+}
+
+export type SubjectCode = '국어' | '수학';
 export const SUBJECTS: SubjectCode[] = ['국어', '수학'];

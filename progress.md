@@ -3,7 +3,7 @@
 ## 목표
 
 1학년 1학기 국어·수학 생활기록부 평어를 빠르게 작성하는 **엑셀 대체** 웹 앱.  
-SaaS가 아닌 단일 세션 도구.
+SaaS가 아닌 단일 세션 도구. AI 문장 생성 미사용, templates 테이블에서만 문장 선택 (deterministic).
 
 ---
 
@@ -11,42 +11,43 @@ SaaS가 아닌 단일 세션 도구.
 
 ### 1. MVP 단순화 (라우팅·개념 정리)
 
-- **프로젝트 개념 제거**: 프로젝트 생성/편집 플로우 삭제
-- **멀티테넌트·인증 제거**: Supabase auth 미사용, `src/lib/supabase/middleware.ts` 삭제
-- **라우팅 단순화**:
-  - 삭제: `/create`, `/project/[id]`
-  - 적용 구조:
-    ```
-    /
-    ├── students   # 학생 명단 입력
-    ├── ratings    # 단원별 등급 입력
-    └── review     # 결과 확인·다운로드
-    ```
+- 프로젝트/멀티테넌트/인증 제거
+- 라우팅: `/` · `/students` · `/ratings` · `/review`
 
-### 2. 데이터·상태
+### 2. Supabase 스키마 (MVP)
 
-- **타입**: `Project`, `Student`, `Grade`, `Result` 제거. `Template`, `Level`, `SubjectCode`(국어/수학) 유지
-- **스토어**: `project-store.ts` 제거 → `app-store.ts` (subject, studentNames, grades, setGrade)
-- **DB**: `projects`, `students`, `grades`, `results` 테이블 제거. **templates**만 사용 (1학년 1학기 국어/수학). 학생·등급·결과는 앱 메모리만 사용
+- **areas**: id(uuid), subject, name, order_index
+- **templates**: id(uuid), area_id(FK), level('1'|'2'|'3'), sentence
+- **students**: id(uuid), number, name
+- **ratings**: (student_id, area_id) PK, level('1'|'2'|'3')
 
-### 3. 평어 생성 로직 (deterministic)
+마이그레이션: `next-app/supabase/migrations/20240216100000_rm_mvp_schema.sql`
 
-- **generator.ts** 순수 함수로 재작성:
-  - Math.random() / LLM 미사용. 템플릿 테이블에서만 문장 선택
-  - seed = hash(studentId + areaId + level) + regenerateCount
-  - index = seed % templates.length → 해당 템플릿 반환
-  - `pickSentence()`, `generateComment(..., options: { studentId, regenerateCount? })` 제공
+### 3. 템플릿 시드 스크립트
 
-### 4. 문서
+- `next-app/scripts/seed-templates.mjs`: xlsx(열: area | level | sentence) → 중복 제거 후 templates insert
+- supabase-js 사용, SUBJECT env로 과목 지정
 
-- **README.md** (next-app): MVP 범위, 라우팅, 사용 흐름, DB 스키마 정리
+### 4. 타입·generator
+
+- Level = '1'|'2'|'3', Area, Template(area_id, level), Student, Rating
+- generator: `generateComment(areaLevels, templates, { studentId, regenerateCount })` — deterministic, 순수 함수
+
+### 5. 페이지 구현
+
+- **/students**: 학생 번호/이름 테이블, 행 추가, 저장 → Supabase (Zustand students-store)
+- **/ratings**: 행=학생, 열=areas, 셀=1/2/3, 변경 시 자동 저장
+- **/review**: students·ratings·templates 조회 → generateComment per 학생, 다시 생성(regenerateCount), 복사
+
+### 6. 문서
+
+- README.md(next-app): 스택, 라우팅, 사용 흐름, DB 구조
 
 ---
 
 ## 다음 작업 (예정)
 
-- [ ] Supabase templates 실제 조회 연동 (review 페이지)
-- [ ] 단원 목록을 DB/templates 기반으로 동적 로딩 (ratings 페이지)
-- [ ] 엑셀 다운로드 (xlsx) 구현
-- [ ] shadcn/ui + Tailwind UI 적용
-- [ ] 1학년 1학기 국어/수학 템플릿 데이터 시딩
+- [ ] areas 초기 데이터 시딩 (국어/수학 단원)
+- [ ] 엑셀 다운로드 (xlsx)
+- [ ] UI 정리 (스타일·접근성)
+- [ ] npm 빌드 환경 점검 (next-pwa 등 의존성)
