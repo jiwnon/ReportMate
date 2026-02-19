@@ -8,6 +8,38 @@ export type Level = '1' | '2' | '3' | '4';
 /** 1학기 | 2학기 */
 export type Semester = 1 | 2;
 
+/** 평어 레벨 단계 수 (2: 잘함/노력요함, 3: 잘함/보통/노력요함, 4: 매우잘함/잘함/보통/노력요함) */
+export type LevelStep = 2 | 3 | 4;
+
+/** 레벨 단계별 선택지: 라벨 + DB에 저장할 level (1~4) */
+export const LEVEL_STEP_OPTIONS: Record<LevelStep, Array<{ label: string; value: Level }>> = {
+  2: [
+    { label: '잘함', value: '2' },
+    { label: '노력요함', value: '4' },
+  ],
+  3: [
+    { label: '잘함', value: '2' },
+    { label: '보통', value: '3' },
+    { label: '노력요함', value: '4' },
+  ],
+  4: [
+    { label: '매우잘함', value: '1' },
+    { label: '잘함', value: '2' },
+    { label: '보통', value: '3' },
+    { label: '노력요함', value: '4' },
+  ],
+};
+
+/**
+ * DB level(1~4)을 현재 레벨 단계에 맞는 select value로 변환.
+ * 2단계: 1,2,3 → '2'(잘함), 4 → '4'; 3단계: 1,2 → '2', 3 → '3', 4 → '4'; 4단계: 그대로.
+ */
+export function levelToSelectValue(level: Level, step: LevelStep): Level {
+  if (step === 4) return level;
+  if (step === 3) return (level === '1' || level === '2' ? '2' : level) as Level;
+  return (level === '4' ? '4' : '2') as Level; // 2-step
+}
+
 /** 과목: 국어, 수학, 통합(바생/슬생/즐생) */
 export type SubjectCode = '국어' | '수학' | '바생' | '슬생' | '즐생';
 

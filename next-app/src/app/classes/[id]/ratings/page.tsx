@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, Suspense } from 'react';
-import { useParams, useSearchParams } from 'next/navigation';
+import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient, hasSupabaseEnv } from '@/lib/supabase/client';
 import { useAppStore } from '@/store/app-store';
@@ -10,18 +10,20 @@ import type { Area } from '@/lib/types';
 import type { Student } from '@/lib/types';
 import type { Classroom } from '@/lib/types';
 import type { Activity } from '@/lib/types';
-import { SUBJECT_LABELS } from '@/lib/types';
+import type { LevelStep } from '@/lib/types';
+import { SUBJECT_LABELS, LEVEL_STEP_OPTIONS, levelToSelectValue } from '@/lib/types';
 import type { SubjectCode } from '@/lib/types';
 
 function ClassRatingsContent() {
   const params = useParams();
   const searchParams = useSearchParams();
+  const router = useRouter();
   const id = params.id as string;
   const sem = searchParams.get('sem');
   const subjectParam = searchParams.get('subject');
   const semester = sem === '2' ? 2 : 1;
   const subject = (subjectParam ?? '국어') as SubjectCode;
-  const { setClassroom, setSemester, setSubject } = useAppStore();
+  const { setClassroom, setSemester, setSubject, selectedAreaIds, levelStep } = useAppStore();
 
   const [classroom, setClassroomState] = useState<Classroom | null>(null);
   const [students, setStudents] = useState<Student[]>([]);
@@ -63,7 +65,10 @@ function ClassRatingsContent() {
         if (!c.error && s.error) setError(s.error.message);
         else if (!c.error) setStudents((s.data ?? []) as Student[]);
         if (!c.error && a.error) setError(a.error.message);
-        else if (!c.error) setAreas((a.data ?? []) as Area[]);
+        else if (!c.error) {
+          const allAreas = (a.data ?? []) as Area[];
+          setAreas(allAreas);
+        }
         if (!c.error && r.error) setError(r.error.message);
         else if (!c.error && r.data) {
           const map: Record<string, Level> = {};
@@ -81,6 +86,21 @@ function ClassRatingsContent() {
         setLoading(false);
       });
   }, [id, semester, subject, setClassroom, setSemester, setSubject]);
+
+  // 단원/레벨단계는 세션만 유지 → 없으면 단원 선택으로
+  useEffect(() => {
+    if (!loading && !error && selectedAreaIds.length === 0) {
+      router.replace(`/classes/${id}/units?sem=${semester}&subject=${subject}`);
+      return;
+    }
+    if (!loading && !error && !levelStep) {
+      router.replace(`/classes/${id}/level-step?sem=${semester}&subject=${subject}`);
+      return;
+    }
+  }, [loading, error, selectedAreaIds.length, levelStep, id, semester, subject, router]);
+
+  const areasFiltered = areas.filter((a) => selectedAreaIds.includes(a.id));
+  const levelOptions = levelStep ? LEVEL_STEP_OPTIONS[levelStep] : [];
 
   const setRating = async (studentId: string, areaId: string, level: Level | '') => {
     setRatings((prev) => {
@@ -127,12 +147,13 @@ function ClassRatingsContent() {
   if (loading) return <div className="loading">로딩 중...</div>;
   if (error) return <div className="alert alert-error">{error}</div>;
   if (!classroom) return <div className="alert alert-error">학급을 찾을 수 없습니다.</div>;
+  if (selectedAreaIds.length === 0 || !levelStep) return <div className="loading">이동 중...</div>;
 
   return (
     <div className="card">
       <h1>{classroom.name} · {semester}학기 · {SUBJECT_LABELS[subject]} 등급</h1>
       <p className="sub">
-        학생별·단원별로 매우잘함/잘함/보통/노력요함을 선택하세요. (변경 시 자동 저장)
+        학생별·선택 단원별로 {levelOptions.map((o) => o.label).join(' / ')} 선택 (변경 시 자동 저장)
       </p>
 
       <section className="activities-section" style={{ marginBottom: 24 }}>
@@ -190,9 +211,7 @@ function ClassRatingsContent() {
                 <tr>
                   <th>번호</th>
                   <th>이름</th>
-                  {areas.length > 0
-                    ? areas.map((a) => <th key={a.id}>{a.name}</th>)
-                    : <th>등급</th>}
+                  {areasFiltered.map((a) => <th key={a.id}>{a.name}</th>)}
                 </tr>
               </thead>
               <tbody>
@@ -200,30 +219,27 @@ function ClassRatingsContent() {
                   <tr key={st.id}>
                     <td>{st.number}</td>
                     <td>{st.name}</td>
-                    {areas.length > 0 ? (
-                      areas.map((a) => (
+                    {areasFiltered.map((a) => {
+                      const dbLevel = ratings[`${st.id}-${a.id}`];
+                      const selectValue = dbLevel ? levelToSelectValue(dbLevel, levelStep!) : '';
+                      return (
                         <td key={a.id}>
                           <select
                             className="input input-level"
-                            value={ratings[`${st.id}-${a.id}`] ?? ''}
+                            value={selectValue}
                             onChange={(e) => {
                               const v = e.target.value;
                               setRating(st.id, a.id, v === '' ? '' : (v as Level));
                             }}
                           >
                             <option value="">선택</option>
-                            <option value="1">매우잘함</option>
-                            <option value="2">잘함</option>
-                            <option value="3">보통</option>
-                            <option value="4">노력요함</option>
+                            {levelOptions.map((o) => (
+                              <option key={o.value} value={o.value}>{o.label}</option>
+                            ))}
                           </select>
                         </td>
-                      ))
-                    ) : (
-                      <td colSpan={1}>
-                        <span className="sub">이 과목·학기의 단원이 없습니다. areas 테이블을 확인하세요.</span>
-                      </td>
-                    )}
+                      );
+                    })}
                   </tr>
                 ))}
               </tbody>
@@ -231,10 +247,16 @@ function ClassRatingsContent() {
           </div>
           <div style={{ marginTop: 16, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <Link href="/review" className="btn btn-primary">
-              3단계: 평어 생성
+              평어 생성
+            </Link>
+            <Link href={`/classes/${id}/level-step?sem=${semester}&subject=${subject}`} className="btn btn-ghost">
+              레벨 단계 변경
+            </Link>
+            <Link href={`/classes/${id}/units?sem=${semester}&subject=${subject}`} className="btn btn-ghost">
+              단원 다시 선택
             </Link>
             <Link href={`/classes/${id}`} className="btn btn-ghost">
-              학급으로 돌아가기
+              학급으로
             </Link>
           </div>
         </>

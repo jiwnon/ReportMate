@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { createClient, hasSupabaseEnv } from '@/lib/supabase/client';
 import { useAppStore } from '@/store/app-store';
@@ -12,7 +12,6 @@ import { MAIN_SUBJECTS, INTEGRATED_SUBJECTS, SUBJECT_LABELS } from '@/lib/types'
 
 export default function ClassDetailPage() {
   const params = useParams();
-  const router = useRouter();
   const id = params.id as string;
   const { setClassroom, setSemester, setSubject } = useAppStore();
   const [classroom, setClassroomState] = useState<Classroom | null>(null);
@@ -48,12 +47,6 @@ export default function ClassDetailPage() {
         setLoading(false);
       });
   }, [id, setClassroom]);
-
-  const goToRatings = (sem: Semester, subject: SubjectCode) => {
-    setSemester(sem);
-    setSubject(subject);
-    router.push(`/classes/${id}/ratings?sem=${sem}&subject=${subject}`);
-  };
 
   const currentSubject = (): SubjectCode | null => {
     if (selectedMainSubject === '국어') return '국어';
@@ -128,14 +121,10 @@ export default function ClassDetailPage() {
           {currentSubject() && (
             <div style={{ marginTop: 16 }}>
               <Link
-                href={`/classes/${id}/ratings?sem=${selectedSemester}&subject=${currentSubject()}`}
+                href={`/classes/${id}/units?sem=${selectedSemester}&subject=${currentSubject()}`}
                 className="btn btn-primary"
-                onClick={(e) => {
-                  e.preventDefault();
-                  goToRatings(selectedSemester!, currentSubject()!);
-                }}
               >
-                등급 입력하기 ({selectedSemester}학기 · {SUBJECT_LABELS[currentSubject()!]})
+                단원 선택 후 등급 입력 ({selectedSemester}학기 · {SUBJECT_LABELS[currentSubject()!]})
               </Link>
             </div>
           )}

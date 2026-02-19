@@ -12,7 +12,7 @@ import type { Rating } from '@/lib/types';
 import type { Activity } from '@/lib/types';
 
 export default function ReviewPage() {
-  const { classroom, semester, subject } = useAppStore();
+  const { classroom, semester, subject, selectedAreaIds } = useAppStore();
   const sub = subject ?? '국어';
   const sem = semester ?? 1;
 
@@ -88,7 +88,11 @@ export default function ReviewPage() {
       });
   }, [sub, sem, classroom?.id]);
 
-  const areaIds = new Set(areas.map((x) => x.id));
+  const areasFiltered =
+    selectedAreaIds.length > 0
+      ? areas.filter((a) => selectedAreaIds.includes(a.id))
+      : areas;
+  const areaIds = new Set(areasFiltered.map((x) => x.id));
   const templatesForSubject = templates.filter((t) => areaIds.has(t.area_id));
   const ratingMap: Record<string, string> = {};
   for (const r of ratings) {
@@ -96,7 +100,7 @@ export default function ReviewPage() {
   }
 
   const getGeneratedText = (student: Student) => {
-    const areaLevels = areas.map((a) => ({
+    const areaLevels = areasFiltered.map((a) => ({
       areaId: a.id,
       level: ratingMap[`${student.id}-${a.id}`] ?? '2',
     }));
