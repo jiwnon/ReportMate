@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { signIn, signOut, useSession } from 'next-auth/react';
 
 const links = [
   { href: '/', label: '홈' },
@@ -13,6 +14,8 @@ const links = [
 
 export default function AppNav() {
   const pathname = usePathname();
+  const { data: session, status } = useSession();
+
   return (
     <nav className="app-nav">
       {links.map(({ href, label }) => (
@@ -24,6 +27,21 @@ export default function AppNav() {
           {label}
         </Link>
       ))}
+      {status !== 'loading' && (
+        session ? (
+          <button
+            type="button"
+            className="app-nav-btn"
+            onClick={() => signOut({ callbackUrl: '/' })}
+          >
+            로그아웃
+          </button>
+        ) : (
+          <Link href="/" className="app-nav-btn">
+            로그인
+          </Link>
+        )
+      )}
     </nav>
   );
 }

@@ -3,7 +3,9 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { createClient, hasSupabaseEnv } from '@/lib/supabase/client';
+import { useSession } from 'next-auth/react';
+import { getStudentsForClassroomAction, upsertStudentsForClassroomAction } from '@/lib/actions/classrooms';
+import { useGuestStore, isGuestId } from '@/store/guest-store';
 import type { Classroom } from '@/lib/types';
 import type { Student } from '@/lib/types';
 
@@ -12,6 +14,11 @@ type StudentRow = { id?: string; number: number; name: string };
 export default function ClassStudentsPage() {
   const params = useParams();
   const id = params.id as string;
+  const { data: session, status } = useSession();
+  const getGuestClassroom = useGuestStore((s) => s.getClassroom);
+  const getGuestStudents = useGuestStore((s) => s.getStudents);
+  const setGuestStudents = useGuestStore((s) => s.setStudents);
+
   const [classroom, setClassroom] = useState<Classroom | null>(null);
   const [rows, setRows] = useState<StudentRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -19,31 +26,35 @@ export default function ClassStudentsPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!hasSupabaseEnv()) {
-      setError('NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY를 .env.local에 설정하세요.');
+    if (status === 'loading') return;
+
+    if (isGuestId(id)) {
+      const c = getGuestClassroom(id);
+      if (c) {
+        setClassroom(c);
+        setRows(getGuestStudents(id).map((s) => ({ id: s.id, number: s.number, name: s.name })));
+      }
       setLoading(false);
       return;
     }
+
+    if (!session) {
+      setError('권한이 없습니다. 로그인하세요.');
+      setLoading(false);
+      return;
+    }
+
     setError(null);
-    const supabase = createClient();
-    const run = async () => {
-      try {
-        const [c, s] = await Promise.all([
-          supabase.from('classrooms').select('id, grade, class_number, name').eq('id', id).single(),
-          supabase.from('students').select('id, number, name').eq('classroom_id', id).order('number'),
-        ]);
-        if (c.error) setError(c.error.message);
-        else setClassroom(c.data as Classroom);
-        if (!c.error && s.error) setError(s.error.message);
-        else if (!c.error) setRows((s.data ?? []).map((r: Student) => ({ id: r.id, number: r.number, name: r.name })));
-      } catch (e) {
-        setError((e as Error)?.message ?? '로드 실패');
-      } finally {
-        setLoading(false);
-      }
-    };
-    void run();
-  }, [id]);
+    getStudentsForClassroomAction(id)
+      .then((res) => {
+        if (res) {
+          setClassroom(res.classroom);
+          setRows(res.students.map((s) => ({ id: s.id, number: s.number, name: s.name })));
+        } else setError('학급을 찾을 수 없거나 권한이 없습니다.');
+      })
+      .catch((e) => setError((e as Error).message))
+      .finally(() => setLoading(false));
+  }, [id, session, status, getGuestClassroom, getGuestStudents]);
 
   const addRow = () => {
     const max = rows.length ? Math.max(...rows.map((r) => r.number), 0) : 0;
@@ -55,29 +66,28 @@ export default function ClassStudentsPage() {
   };
 
   const handleSave = async () => {
-    if (!hasSupabaseEnv() || !id) return;
     setSaving(true);
     setError(null);
-    const supabase = createClient();
-    for (const row of rows) {
-      if (row.id) {
-        await supabase.from('students').update({ number: row.number, name: row.name }).eq('id', row.id);
-      } else {
-        const { data } = await supabase
-          .from('students')
-          .insert({ number: row.number, name: row.name, classroom_id: id })
-          .select('id')
-          .single();
-        if (data) (row as { id?: string }).id = data.id;
-      }
+
+    if (isGuestId(id)) {
+      const guestStudents = rows.map((r, i) => ({
+        id: `guest-s-${id}-${i}`,
+        number: r.number,
+        name: r.name,
+        classroom_id: id,
+      }));
+      setGuestStudents(id, guestStudents);
+      setSaving(false);
+      return;
     }
-    const { data, error: err } = await supabase
-      .from('students')
-      .select('id, number, name')
-      .eq('classroom_id', id)
-      .order('number');
-    if (err) setError(err.message);
-    else setRows((data ?? []).map((r: Student) => ({ id: r.id, number: r.number, name: r.name })));
+
+    const result = await upsertStudentsForClassroomAction(id, rows);
+    if ('error' in result) {
+      setError(result.error);
+      setSaving(false);
+      return;
+    }
+    setRows(result.students.map((s) => ({ id: s.id, number: s.number, name: s.name })));
     setSaving(false);
   };
 
@@ -88,7 +98,10 @@ export default function ClassStudentsPage() {
   return (
     <div className="card">
       <h1>{classroom.name} 학생 명단</h1>
-      <p className="sub">번호와 이름을 입력한 뒤 저장하세요.</p>
+      <p className="sub">
+        번호와 이름을 입력한 뒤 저장하세요.
+        {isGuestId(id) && <span style={{ color: 'var(--color-text-muted)' }}> (체험: 저장되지 않음)</span>}
+      </p>
       <div className="table-wrap">
         <table>
           <thead>

@@ -50,9 +50,26 @@
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase 프로젝트 URL | Supabase 대시보드 → Project Settings → API |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase 익명(공개) 키 | 위와 동일 |
 | `OPENAI_API_KEY` | OpenAI API 키 (평어 GPT 재작성용) | [OpenAI API Keys](https://platform.openai.com/api-keys) |
+| `NEXTAUTH_SECRET` | NextAuth 암호화용 (32자 이상 랜덤) | 직접 생성 (예: `openssl rand -base64 32`) |
+| `NEXTAUTH_URL` | 배포 주소 (프로덕션) | **https://report-mate.org** |
+| `GOOGLE_CLIENT_ID` | Google OAuth 클라이언트 ID | [Google Cloud Console](https://console.cloud.google.com/) → 사용자 인증 정보 |
+| `GOOGLE_CLIENT_SECRET` | Google OAuth 클라이언트 보안 비밀번호 | 위와 동일 |
 
-- **비밀 키**: `OPENAI_API_KEY` 는 **절대** 코드·Git에 넣지 말고, 아래 3.2처럼 **Wrangler Secret** 또는 Dashboard에서만 설정하세요.
+- **비밀 키**: `OPENAI_API_KEY`, `NEXTAUTH_SECRET`, `GOOGLE_CLIENT_SECRET` 는 **절대** 코드·Git에 넣지 말고, **Wrangler Secret** 또는 Dashboard **Encrypted** 에만 설정하세요.
 - **공개 변수**: `NEXT_PUBLIC_*` 는 빌드 시 프론트에 포함되므로, Git 연동 배포 시 Cloudflare 빌드 설정의 **Environment variables** 에 넣어 주세요.
+- **Google 콘솔**: 리디렉션 URI에 `https://report-mate.org/api/auth/callback/google` 를 추가해야 로그인이 동작합니다.
+
+### 2.3 Google 로그인 점검 (report-mate.org / 로컬)
+
+로그인 버튼을 눌러도 반응이 없거나 오류가 나면 아래를 확인하세요.
+
+1. **Google Cloud Console** → [APIs & Services → 사용자 인증 정보](https://console.cloud.google.com/apis/credentials)
+   - OAuth 2.0 클라이언트 ID 선택 → **승인된 리디렉션 URI**에 다음이 있는지 확인:
+     - 로컬: `http://localhost:3000/api/auth/callback/google`
+     - 배포: `https://report-mate.org/api/auth/callback/google`
+2. **OAuth 동의 화면**에서 앱이 "테스트"로 되어 있으면, **테스트 사용자**에 로그인할 Google 이메일을 추가해야 합니다. (미추가 시 "앱이 확인되지 않음" 등으로 로그인 불가)
+3. **로컬**: `next-app/.env.local` 에 `NEXTAUTH_SECRET`, `NEXTAUTH_URL`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` 이 들어 있는지 확인. 수정 후 **반드시 `npm run dev` 를 끄고 다시 실행**.
+4. **배포**: Cloudflare Worker **Variables and Secrets** 에 위 변수/시크릿이 설정되어 있는지 확인. (이미 설정된 경우 재배포만 하면 됨.)
 
 ---
 
@@ -68,8 +85,11 @@ npx wrangler login
 
 # 2) 비밀 변수 설정 (최초 1회, 값은 직접 입력)
 npx wrangler secret put OPENAI_API_KEY
+npx wrangler secret put NEXTAUTH_SECRET
+npx wrangler secret put GOOGLE_CLIENT_SECRET
 
-# 3) 공개 변수는 wrangler.jsonc 의 vars 또는 Dashboard에서 설정 (아래 3.2 참고)
+# 3) 공개/배포용 변수는 Dashboard에서 설정 (아래 3.2 참고)
+#    NEXTAUTH_URL=https://report-mate.org, GOOGLE_CLIENT_ID=...
 
 # 4) 빌드 + 배포
 npm run deploy:cf
@@ -82,11 +102,11 @@ npm run deploy:cf
 1. [Cloudflare Dashboard](https://dash.cloudflare.com) → **Workers & Pages**
 2. **report-mate** Worker 선택
 3. **Settings** → **Variables and Secrets**
-   - **Environment Variables**: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` 추가 (빌드/런타임 모두 사용 시 둘 다 설정)
-   - **Encrypted (Secret)**: `OPENAI_API_KEY` 추가
+   - **Environment Variables**: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXTAUTH_URL`(= `https://report-mate.org`), `GOOGLE_CLIENT_ID` 추가
+   - **Encrypted (Secret)**: `OPENAI_API_KEY`, `NEXTAUTH_SECRET`, `GOOGLE_CLIENT_SECRET` 추가
 
 Git 연동 배포를 쓰는 경우, **Workers & Pages** → 해당 프로젝트 → **Settings** → **Build** 에서  
-**Build environment variables** 에 `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` 를 넣어 두면 빌드 시 적용됩니다.
+**Build environment variables** 에 `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXTAUTH_URL`, `GOOGLE_CLIENT_ID` 를 넣어 두면 빌드 시 적용됩니다. **Secrets** 에 `OPENAI_API_KEY`, `NEXTAUTH_SECRET`, `GOOGLE_CLIENT_SECRET` 설정.
 
 ### 3.3 GitHub 연동 자동 배포 (선택)
 

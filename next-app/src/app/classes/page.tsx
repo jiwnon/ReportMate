@@ -2,46 +2,51 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { createClient, hasSupabaseEnv } from '@/lib/supabase/client';
+import { useSession } from 'next-auth/react';
+import { getClassroomsAction } from '@/lib/actions/classrooms';
+import { useGuestStore } from '@/store/guest-store';
 import type { Classroom } from '@/lib/types';
 
 export default function ClassesPage() {
+  const { data: session, status } = useSession();
   const [list, setList] = useState<Classroom[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const guestClassrooms = useGuestStore((s) => s.classrooms);
+
   useEffect(() => {
-    if (!hasSupabaseEnv()) {
-      setError('NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY를 .env.local에 설정하세요.');
+    if (status === 'loading') return;
+
+    if (!session) {
+      setList(guestClassrooms);
       setLoading(false);
       return;
     }
-    setError(null);
-    const run = async () => {
-      try {
-        const { data, error: err } = await createClient()
-          .from('classrooms')
-          .select('id, grade, class_number, name')
-          .order('grade')
-          .order('class_number');
-        if (err) setError(err.message);
-        else setList((data ?? []) as Classroom[]);
-      } catch (e) {
-        setError((e as Error)?.message ?? '로드 실패');
-      } finally {
-        setLoading(false);
-      }
-    };
-    void run();
-  }, []);
 
-  if (loading) return <div className="loading">로딩 중...</div>;
+    setError(null);
+    getClassroomsAction()
+      .then(setList)
+      .catch((e) => setError((e as Error).message))
+      .finally(() => setLoading(false));
+  }, [session, status, guestClassrooms]);
+
+  if (status === 'loading' || loading) return <div className="loading">로딩 중...</div>;
   if (error) return <div className="alert alert-error">{error}</div>;
+
+  const displayList = session ? list : guestClassrooms;
 
   return (
     <div className="card">
       <h1>학급 목록</h1>
-      <p className="sub">학급을 등록하고, 학기·과목을 선택한 뒤 등급을 입력하세요.</p>
+      <p className="sub">
+        학급을 등록하고, 학기·과목을 선택한 뒤 등급을 입력하세요.
+        {!session && (
+          <span style={{ display: 'block', marginTop: 4, color: 'var(--color-text-muted)' }}>
+            (체험 모드: 저장되지 않습니다. 로그인하면 저장됩니다.)
+          </span>
+        )}
+      </p>
       <div className="table-wrap">
         <table>
           <thead>
@@ -51,12 +56,12 @@ export default function ClassesPage() {
             </tr>
           </thead>
           <tbody>
-            {list.length === 0 ? (
+            {displayList.length === 0 ? (
               <tr>
                 <td colSpan={2}>등록된 학급이 없습니다. 학급 등록을 눌러 추가하세요.</td>
               </tr>
             ) : (
-              list.map((c) => (
+              displayList.map((c) => (
                 <tr key={c.id}>
                   <td>
                     <Link href={`/classes/${c.id}`} className="link">

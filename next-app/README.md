@@ -65,5 +65,7 @@ src/
 ## 로컬 실행
 
 1. `npm install`
-2. `.env.local`에 `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` 설정
-3. `npm run dev`
+2. **환경 변수**: `next-app` 폴더에 `.env.local` 생성 (없으면 `.env.example`을 복사해 `.env.local`로 저장한 뒤 값 채우기).
+   - Supabase: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+   - Google 로그인: `NEXTAUTH_URL=http://localhost:3000`, `NEXTAUTH_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` (`.env.example` 주석 참고)
+3. `npm run dev` (env 수정 후에는 서버 재시작)

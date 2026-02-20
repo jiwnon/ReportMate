@@ -3,8 +3,10 @@
 import { useEffect, useState, Suspense } from 'react';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { createClient, hasSupabaseEnv } from '@/lib/supabase/client';
+import { useSession } from 'next-auth/react';
+import { getClassroomIfOwnedAction } from '@/lib/actions/classrooms';
 import { useAppStore } from '@/store/app-store';
+import { useGuestStore, isGuestId } from '@/store/guest-store';
 import type { Classroom } from '@/lib/types';
 import type { SubjectCode } from '@/lib/types';
 import type { Semester } from '@/lib/types';
@@ -27,41 +29,49 @@ function LevelStepContent() {
   const semester = (sem === '2' ? 2 : 1) as Semester;
   const subject = (subjectParam ?? '국어') as SubjectCode;
 
+  const { data: session, status } = useSession();
   const { setClassroom, setSemester, setSubject, setLevelStep, selectedAreaIds } = useAppStore();
+  const getGuestClassroom = useGuestStore((s) => s.getClassroom);
+
   const [classroom, setClassroomState] = useState<Classroom | null>(null);
   const [selectedStep, setSelectedStep] = useState<LevelStep | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!hasSupabaseEnv()) {
-      setError('NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY를 .env.local에 설정하세요.');
+    if (status === 'loading') return;
+
+    if (isGuestId(id)) {
+      const c = getGuestClassroom(id);
+      if (c) {
+        setClassroomState(c);
+        setClassroom(c);
+      }
+      setSemester(semester);
+      setSubject(subject);
       setLoading(false);
       return;
     }
+
+    if (!session) {
+      setError('권한이 없습니다.');
+      setLoading(false);
+      return;
+    }
+
     setError(null);
-    const run = async () => {
-      try {
-        const { data, error: err } = await createClient()
-          .from('classrooms')
-          .select('id, grade, class_number, name')
-          .eq('id', id)
-          .single();
-        if (err) setError(err.message);
-        else if (data) {
-          setClassroomState(data as Classroom);
-          setClassroom(data as Classroom);
-        }
+    getClassroomIfOwnedAction(id)
+      .then((c) => {
+        if (c) {
+          setClassroomState(c);
+          setClassroom(c);
+        } else setError('학급을 찾을 수 없거나 권한이 없습니다.');
         setSemester(semester);
         setSubject(subject);
-      } catch (e) {
-        setError((e as Error)?.message ?? '로드 실패');
-      } finally {
-        setLoading(false);
-      }
-    };
-    void run();
-  }, [id, semester, subject, setClassroom, setSemester, setSubject]);
+      })
+      .catch((e) => setError((e as Error).message))
+      .finally(() => setLoading(false));
+  }, [id, semester, subject, session, status, getGuestClassroom, setClassroom, setSemester, setSubject]);
 
   const goNext = (step: LevelStep) => {
     setLevelStep(step);

@@ -12,7 +12,7 @@
 
 | 항목 | 설명 |
 |------|------|
-| **.env.local** | `next-app` 폴더에 생성. `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` 설정 (Supabase 대시보드 → Project Settings → API). |
+| **.env.local** | `next-app` 폴더에 생성. Supabase: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`. **Google 로그인** 사용 시: `NEXTAUTH_URL`, `NEXTAUTH_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` 추가 (예: `.env.example` 복사 후 값 채우기). |
 | **Supabase 마이그레이션** | `supabase/migrations/20240216100000_rm_mvp_schema.sql` 적용 (areas, templates, students, ratings 테이블 생성). |
 | **areas 데이터** | `areas` 테이블에 국어/수학 단원 행이 있어야 `/ratings`, `/review`에서 열이 보임. **국어**: `node scripts/seed-국어-평어.mjs` 실행으로 단원+평어 문장 일괄 등록 가능. |
 
@@ -30,6 +30,7 @@
 | "relation \"public.areas\" does not exist" | 마이그레이션 미적용 | Supabase에서 해당 migration 실행 |
 | /ratings·/review에서 학생/영역 없음 | students·areas 테이블 비어 있음 | /students에서 학생 저장, areas 테이블에 단원 insert |
 | "로드 실패" / 네트워크 에러 | Supabase URL·키 오류 또는 네트워크 | URL·키 확인, 브라우저 콘솔·네트워크 탭 확인 |
+| NEXTAUTH_URL / NO_SECRET 경고, `/api/auth/*` 503 | Google 로그인용 env 없음 | `.env.local`에 `NEXTAUTH_URL=http://localhost:3000`, `NEXTAUTH_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` 넣기. `.env.example` 참고 후 **npm run dev 재시작**. |
 
 ## 5. 실행 방법
 

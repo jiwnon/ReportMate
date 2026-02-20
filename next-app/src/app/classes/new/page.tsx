@@ -3,11 +3,15 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { createClient, hasSupabaseEnv } from '@/lib/supabase/client';
-import type { Classroom } from '@/lib/types';
+import { useSession } from 'next-auth/react';
+import { createClassroomAction } from '@/lib/actions/classrooms';
+import { useGuestStore } from '@/store/guest-store';
 
 export default function NewClassPage() {
   const router = useRouter();
+  const { data: session, status } = useSession();
+  const addClassroom = useGuestStore((s) => s.addClassroom);
+
   const [grade, setGrade] = useState<number>(1);
   const [classNumber, setClassNumber] = useState<number>(1);
   const [saving, setSaving] = useState(false);
@@ -17,31 +21,38 @@ export default function NewClassPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!hasSupabaseEnv()) {
-      setError('환경 변수를 설정해 주세요.');
-      return;
-    }
     setSaving(true);
     setError(null);
-    const { data, error: err } = await createClient()
-      .from('classrooms')
-      .insert({ grade, class_number: classNumber, name })
-      .select('id')
-      .single();
-    if (err) {
-      setError(err.message);
-      setSaving(false);
+
+    if (session?.user) {
+      const result = await createClassroomAction(grade, classNumber, name);
+      if ('error' in result) {
+        setError(result.error);
+        setSaving(false);
+        return;
+      }
+      router.push(`/classes/${result.id}`);
       return;
     }
-    const created = data as { id: string };
+
+    const classroom = addClassroom({ grade, class_number: classNumber, name });
     setSaving(false);
-    router.push(`/classes/${created.id}`);
+    router.push(`/classes/${classroom.id}`);
   };
+
+  if (status === 'loading') return <div className="loading">로딩 중...</div>;
 
   return (
     <div className="card">
       <h1>학급 등록</h1>
-      <p className="sub">학년과 반을 선택하면 학급 이름이 자동으로 만들어집니다. (예: 1학년 1반)</p>
+      <p className="sub">
+        학년과 반을 선택하면 학급 이름이 자동으로 만들어집니다. (예: 1학년 1반)
+        {!session && (
+          <span style={{ display: 'block', marginTop: 4, color: 'var(--color-text-muted)' }}>
+            체험 모드: 저장되지 않습니다.
+          </span>
+        )}
+      </p>
       <form onSubmit={handleSubmit}>
         <div className="form-row">
           <label htmlFor="grade">학년</label>
@@ -79,7 +90,7 @@ export default function NewClassPage() {
         {error && <div className="alert alert-error">{error}</div>}
         <div style={{ display: 'flex', gap: 8 }}>
           <button type="submit" className="btn btn-primary" disabled={saving}>
-            {saving ? '저장 중...' : '등록'}
+            {saving ? '저장 중...' : session ? '등록' : '체험 추가'}
           </button>
           <Link href="/classes" className="btn btn-ghost">
             취소

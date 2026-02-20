@@ -16,7 +16,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: '#2563eb',
+  themeColor: '#E07B54',
   width: 'device-width',
   initialScale: 1,
   maximumScale: 5,
@@ -24,6 +24,7 @@ export const viewport: Viewport = {
 };
 
 import AppNav from '@/components/AppNav';
+import SessionProvider from '@/components/SessionProvider';
 
 export default function RootLayout({
   children,
@@ -33,15 +34,17 @@ export default function RootLayout({
   return (
     <html lang="ko">
       <body>
-        <div className="app-shell">
-          <header className="app-header">
-            <div className="app-header-inner">
-              <a href="/" className="app-logo">ReportMate</a>
-              <AppNav />
-            </div>
-          </header>
-          <main className="app-main">{children}</main>
-        </div>
+        <SessionProvider>
+          <div className="app-shell">
+            <header className="app-header">
+              <div className="app-header-inner">
+                <a href="/" className="app-logo">ReportMate</a>
+                <AppNav />
+              </div>
+            </header>
+            <main className="app-main">{children}</main>
+          </div>
+        </SessionProvider>
       </body>
     </html>
   );

@@ -3,8 +3,10 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { createClient, hasSupabaseEnv } from '@/lib/supabase/client';
+import { useSession } from 'next-auth/react';
+import { getClassroomIfOwnedAction } from '@/lib/actions/classrooms';
 import { useAppStore } from '@/store/app-store';
+import { useGuestStore, isGuestId } from '@/store/guest-store';
 import type { Classroom } from '@/lib/types';
 import type { Semester } from '@/lib/types';
 import type { SubjectCode } from '@/lib/types';
@@ -13,7 +15,10 @@ import { MAIN_SUBJECTS, INTEGRATED_SUBJECTS, SUBJECT_LABELS } from '@/lib/types'
 export default function ClassDetailPage() {
   const params = useParams();
   const id = params.id as string;
+  const { data: session, status } = useSession();
   const { setClassroom, setSemester, setSubject } = useAppStore();
+  const getGuestClassroom = useGuestStore((s) => s.getClassroom);
+
   const [classroom, setClassroomState] = useState<Classroom | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -22,33 +27,35 @@ export default function ClassDetailPage() {
   const [selectedSubSubject, setSelectedSubSubject] = useState<SubjectCode | null>(null);
 
   useEffect(() => {
-    if (!hasSupabaseEnv()) {
-      setError('NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY를 .env.local에 설정하세요.');
+    if (status === 'loading') return;
+
+    if (isGuestId(id)) {
+      const c = getGuestClassroom(id);
+      if (c) {
+        setClassroomState(c);
+        setClassroom(c);
+      }
       setLoading(false);
       return;
     }
+
+    if (!session) {
+      setError('학급을 찾을 수 없습니다. 로그인하면 저장된 학급을 볼 수 있습니다.');
+      setLoading(false);
+      return;
+    }
+
     setError(null);
-    const run = async () => {
-      try {
-        const { data, error: err } = await createClient()
-          .from('classrooms')
-          .select('id, grade, class_number, name')
-          .eq('id', id)
-          .single();
-        if (err) setError(err.message);
-        else if (data) {
-          const c = data as Classroom;
+    getClassroomIfOwnedAction(id)
+      .then((c) => {
+        if (c) {
           setClassroomState(c);
           setClassroom(c);
-        }
-      } catch (e) {
-        setError((e as Error)?.message ?? '로드 실패');
-      } finally {
-        setLoading(false);
-      }
-    };
-    void run();
-  }, [id, setClassroom]);
+        } else setError('학급을 찾을 수 없거나 접근 권한이 없습니다.');
+      })
+      .catch((e) => setError((e as Error).message))
+      .finally(() => setLoading(false));
+  }, [id, session, status, getGuestClassroom, setClassroom]);
 
   const currentSubject = (): SubjectCode | null => {
     if (selectedMainSubject === '국어') return '국어';

@@ -3,8 +3,11 @@
 import { useEffect, useState, Suspense } from 'react';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { useSession } from 'next-auth/react';
 import { createClient, hasSupabaseEnv } from '@/lib/supabase/client';
+import { getClassroomWithAreasAction } from '@/lib/actions/classrooms';
 import { useAppStore } from '@/store/app-store';
+import { useGuestStore, isGuestId } from '@/store/guest-store';
 import type { Area } from '@/lib/types';
 import type { Classroom } from '@/lib/types';
 import type { SubjectCode } from '@/lib/types';
@@ -21,7 +24,10 @@ function UnitsContent() {
   const semester = (sem === '2' ? 2 : 1) as Semester;
   const subject = (subjectParam ?? '국어') as SubjectCode;
 
+  const { data: session, status } = useSession();
   const { setClassroom, setSemester, setSubject, setSelectedAreaIds, selectedAreaIds } = useAppStore();
+  const getGuestClassroom = useGuestStore((s) => s.getClassroom);
+
   const [classroom, setClassroomState] = useState<Classroom | null>(null);
   const [areas, setAreas] = useState<Area[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set(selectedAreaIds));
@@ -29,40 +35,62 @@ function UnitsContent() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!hasSupabaseEnv()) {
-      setError('NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY를 .env.local에 설정하세요.');
+    if (status === 'loading') return;
+
+    if (isGuestId(id)) {
+      const c = getGuestClassroom(id);
+      if (!c) {
+        setError('학급을 찾을 수 없습니다.');
+        setLoading(false);
+        return;
+      }
+      setClassroomState(c);
+      setClassroom(c);
+      setSemester(semester);
+      setSubject(subject);
+      if (!hasSupabaseEnv()) {
+        setLoading(false);
+        return;
+      }
+      createClient()
+        .from('areas')
+        .select('id, subject, name, order_index, semester')
+        .eq('subject', subject)
+        .eq('semester', semester)
+        .order('order_index')
+        .then(({ data, error: err }) => {
+          if (err) setError(err.message);
+          else {
+            const areaList = (data ?? []) as Area[];
+            setAreas(areaList);
+            setSelected(new Set(areaList.filter((x) => selectedAreaIds.includes(x.id)).map((x) => x.id)));
+          }
+          setLoading(false);
+        });
+      return;
+    }
+
+    if (!session) {
+      setError('권한이 없습니다.');
       setLoading(false);
       return;
     }
+
     setError(null);
-    const supabase = createClient();
-    const run = async () => {
-      try {
-        const [c, a] = await Promise.all([
-          supabase.from('classrooms').select('id, grade, class_number, name').eq('id', id).single(),
-          supabase.from('areas').select('id, subject, name, order_index, semester').eq('subject', subject).eq('semester', semester).order('order_index'),
-        ]);
-        if (c.error) setError(c.error.message);
-        else if (c.data) {
-          setClassroomState(c.data as Classroom);
-          setClassroom(c.data as Classroom);
-        }
-        setSemester(semester);
-        setSubject(subject);
-        if (!c.error && a.error) setError(a.error.message);
-        else if (!c.error) {
-          const areaList = (a.data ?? []) as Area[];
-          setAreas(areaList);
-          setSelected(new Set(areaList.filter((x) => selectedAreaIds.includes(x.id)).map((x) => x.id)));
-        }
-      } catch (e) {
-        setError((e as Error)?.message ?? '로드 실패');
-      } finally {
-        setLoading(false);
-      }
-    };
-    void run();
-  }, [id, semester, subject, setClassroom, setSemester, setSubject]);
+    getClassroomWithAreasAction(id, subject, semester)
+      .then((res) => {
+        if (res) {
+          setClassroomState(res.classroom);
+          setClassroom(res.classroom);
+          setSemester(semester);
+          setSubject(subject);
+          setAreas(res.areas);
+          setSelected(new Set(res.areas.filter((x) => selectedAreaIds.includes(x.id)).map((x) => x.id)));
+        } else setError('학급을 찾을 수 없거나 권한이 없습니다.');
+      })
+      .catch((e) => setError((e as Error).message))
+      .finally(() => setLoading(false));
+  }, [id, semester, subject, session, status, getGuestClassroom, setClassroom, setSemester, setSubject, selectedAreaIds]);
 
   const toggle = (areaId: string) => {
     setSelected((prev) => {

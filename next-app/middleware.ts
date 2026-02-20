@@ -1,10 +1,12 @@
 /**
- * Next.js 미들웨어 (MVP: 인증 없음)
+ * Next.js 미들웨어
+ * - 비로그인 사용자도 체험 가능하므로 라우트 차단 없음.
+ * - 로그인 사용자 데이터 격리: Server Actions에서 user_id로만 학급 접근.
  */
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
-export async function middleware(request: NextRequest) {
+export function middleware(_request: NextRequest) {
   return NextResponse.next();
 }
 

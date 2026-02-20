@@ -3,8 +3,11 @@
 import { useEffect, useState, Suspense } from 'react';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { createClient, hasSupabaseEnv } from '@/lib/supabase/client';
+import { useSession } from 'next-auth/react';
+import { getClassroomDataForRatingsAction, upsertRatingAction, addActivityAction, deleteActivityAction } from '@/lib/actions/classrooms';
 import { useAppStore } from '@/store/app-store';
+import { useGuestStore, isGuestId } from '@/store/guest-store';
+import { createClient, hasSupabaseEnv } from '@/lib/supabase/client';
 import type { Level } from '@/lib/types';
 import type { Area } from '@/lib/types';
 import type { Student } from '@/lib/types';
@@ -23,7 +26,16 @@ function ClassRatingsContent() {
   const subjectParam = searchParams.get('subject');
   const semester = sem === '2' ? 2 : 1;
   const subject = (subjectParam ?? '국어') as SubjectCode;
+  const { data: session, status } = useSession();
   const { setClassroom, setSemester, setSubject, selectedAreaIds, levelStep } = useAppStore();
+
+  const getGuestClassroom = useGuestStore((s) => s.getClassroom);
+  const getGuestStudents = useGuestStore((s) => s.getStudents);
+  const getGuestRatings = useGuestStore((s) => s.getRatings);
+  const setGuestRating = useGuestStore((s) => s.setRating);
+  const getGuestActivities = useGuestStore((s) => s.getActivities);
+  const addGuestActivity = useGuestStore((s) => s.addActivity);
+  const deleteGuestActivity = useGuestStore((s) => s.deleteActivity);
 
   const [classroom, setClassroomState] = useState<Classroom | null>(null);
   const [students, setStudents] = useState<Student[]>([]);
@@ -36,58 +48,59 @@ function ClassRatingsContent() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!hasSupabaseEnv()) {
-      setError('NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY를 .env.local에 설정하세요.');
+    if (status === 'loading') return;
+
+    if (isGuestId(id)) {
+      const c = getGuestClassroom(id);
+      if (!c) {
+        setError('학급을 찾을 수 없습니다.');
+        setLoading(false);
+        return;
+      }
+      setClassroomState(c);
+      setClassroom(c);
+      setSemester(semester);
+      setSubject(subject);
+      setStudents(getGuestStudents(id));
+      const guestRatings = getGuestRatings();
+      setRatings(guestRatings);
+      setActivities(getGuestActivities(id, semester, subject).map((a) => ({ ...a, classroom_id: id, semester, subject } as Activity)));
+      if (hasSupabaseEnv()) {
+        createClient()
+          .from('areas')
+          .select('id, subject, name, order_index, semester')
+          .eq('subject', subject)
+          .eq('semester', semester)
+          .order('order_index')
+          .then(({ data }) => setAreas((data ?? []) as Area[]));
+      }
       setLoading(false);
       return;
     }
+
+    if (!session) {
+      setError('권한이 없습니다.');
+      setLoading(false);
+      return;
+    }
+
     setError(null);
-    setClassroom(null);
-    setStudents([]);
-    setAreas([]);
-    setRatings({});
-    const supabase = createClient();
-    const run = async () => {
-      try {
-        const [c, s, a, r, act] = await Promise.all([
-          supabase.from('classrooms').select('id, grade, class_number, name').eq('id', id).single(),
-          supabase.from('students').select('id, number, name').eq('classroom_id', id).order('number'),
-          supabase.from('areas').select('id, subject, name, order_index, semester').eq('subject', subject).eq('semester', semester).order('order_index'),
-          supabase.from('ratings').select('student_id, area_id, level'),
-          supabase.from('activities').select('id, classroom_id, semester, subject, description, created_at').eq('classroom_id', id).eq('semester', semester).eq('subject', subject).order('created_at', { ascending: true }),
-        ]);
-        if (c.error) setError(c.error.message);
-        else if (c.data) {
-          setClassroomState(c.data as Classroom);
-          setClassroom(c.data as Classroom);
-        }
-        setSemester(semester);
-        setSubject(subject);
-        if (!c.error && s.error) setError(s.error.message);
-        else if (!c.error) setStudents((s.data ?? []) as Student[]);
-        if (!c.error && a.error) setError(a.error.message);
-        else if (!c.error) {
-          const allAreas = (a.data ?? []) as Area[];
-          setAreas(allAreas);
-        }
-        if (!c.error && r.error) setError(r.error.message);
-        else if (!c.error && r.data) {
-          const map: Record<string, Level> = {};
-          for (const x of r.data) {
-            map[`${x.student_id}-${x.area_id}`] = x.level as Level;
-          }
-          setRatings(map);
-        }
-        if (!c.error && act.error) setError(act.error.message);
-        else if (!c.error) setActivities((act.data ?? []) as Activity[]);
-      } catch (e) {
-        setError((e as Error)?.message ?? '로드 실패');
-      } finally {
-        setLoading(false);
-      }
-    };
-    void run();
-  }, [id, semester, subject, setClassroom, setSemester, setSubject]);
+    getClassroomDataForRatingsAction(id, semester, subject)
+      .then((res) => {
+        if (res) {
+          setClassroomState(res.classroom);
+          setClassroom(res.classroom);
+          setSemester(semester);
+          setSubject(subject);
+          setStudents(res.students);
+          setAreas(res.areas);
+          setRatings(res.ratings);
+          setActivities(res.activities);
+        } else setError('학급을 찾을 수 없거나 권한이 없습니다.');
+      })
+      .catch((e) => setError((e as Error).message))
+      .finally(() => setLoading(false));
+  }, [id, semester, subject, session, status, getGuestClassroom, getGuestStudents, getGuestRatings, getGuestActivities, setClassroom, setSemester, setSubject]);
 
   // 단원/레벨단계는 세션만 유지 → 없으면 단원 선택으로
   useEffect(() => {
@@ -104,46 +117,56 @@ function ClassRatingsContent() {
   const areasFiltered = areas.filter((a) => selectedAreaIds.includes(a.id));
   const levelOptions = levelStep ? LEVEL_STEP_OPTIONS[levelStep] : [];
 
+  const ratingKey = (studentId: string, areaId: string) =>
+    isGuestId(id) ? `${studentId}::${areaId}` : `${studentId}-${areaId}`;
+
   const setRating = async (studentId: string, areaId: string, level: Level | '') => {
+    const key = ratingKey(studentId, areaId);
     setRatings((prev) => {
       const next = { ...prev };
-      if (level === '') delete next[`${studentId}-${areaId}`];
-      else next[`${studentId}-${areaId}`] = level;
+      if (level === '') delete next[key];
+      else next[key] = level;
       return next;
     });
-    const supabase = createClient();
-    if (level === '') {
-      await supabase.from('ratings').delete().eq('student_id', studentId).eq('area_id', areaId);
-    } else {
-      await supabase.from('ratings').upsert(
-        { student_id: studentId, area_id: areaId, level },
-        { onConflict: 'student_id,area_id' }
-      );
+    if (isGuestId(id)) {
+      setGuestRating(key, level === '' ? null : level);
+      return;
     }
+    const result = await upsertRatingAction(studentId, areaId, level === '' ? null : level);
+    if (result.error) setError(result.error);
   };
 
   const addActivity = async () => {
     const desc = activityInput.trim();
     if (!desc || activitySaving) return;
     setActivitySaving(true);
-    const supabase = createClient();
-    const { data, error: err } = await supabase
-      .from('activities')
-      .insert({ classroom_id: id, semester, subject, description: desc })
-      .select('id, classroom_id, semester, subject, description, created_at')
-      .single();
+    if (isGuestId(id)) {
+      addGuestActivity(id, semester, subject, desc);
+      setActivities(
+        getGuestActivities(id, semester, subject).map((a) => ({ ...a, classroom_id: id, semester, subject } as Activity))
+      );
+      setActivityInput('');
+      setActivitySaving(false);
+      return;
+    }
+    const result = await addActivityAction(id, semester, subject, desc);
     setActivitySaving(false);
-    if (err) setError(err.message);
-    else if (data) {
-      setActivities((prev) => [...prev, data as Activity]);
+    if (result.error) setError(result.error);
+    else if (result.activity) {
+      setActivities((prev) => [...prev, result.activity!]);
       setActivityInput('');
     }
   };
 
   const deleteActivity = async (activityId: string) => {
-    const supabase = createClient();
-    await supabase.from('activities').delete().eq('id', activityId);
-    setActivities((prev) => prev.filter((a) => a.id !== activityId));
+    if (isGuestId(id)) {
+      deleteGuestActivity(id, activityId);
+      setActivities((prev) => prev.filter((a) => a.id !== activityId));
+      return;
+    }
+    const result = await deleteActivityAction(activityId);
+    if (result.error) setError(result.error);
+    else setActivities((prev) => prev.filter((a) => a.id !== activityId));
   };
 
   if (loading) return <div className="loading">로딩 중...</div>;
@@ -156,6 +179,7 @@ function ClassRatingsContent() {
       <h1>{classroom.name} · {semester}학기 · {SUBJECT_LABELS[subject]} 등급</h1>
       <p className="sub">
         학생별·선택 단원별로 {levelOptions.map((o) => o.label).join(' / ')} 선택 (변경 시 자동 저장)
+        {isGuestId(id) && <span style={{ color: 'var(--color-text-muted)' }}> (체험: 저장되지 않음)</span>}
       </p>
 
       <section className="activities-section" style={{ marginBottom: 24 }}>
@@ -222,7 +246,7 @@ function ClassRatingsContent() {
                     <td>{st.number}</td>
                     <td>{st.name}</td>
                     {areasFiltered.map((a) => {
-                      const dbLevel = ratings[`${st.id}-${a.id}`];
+                      const dbLevel = ratings[ratingKey(st.id, a.id)];
                       const selectValue = dbLevel ? levelToSelectValue(dbLevel, levelStep!) : '';
                       return (
                         <td key={a.id}>

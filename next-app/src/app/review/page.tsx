@@ -2,8 +2,11 @@
 
 import { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
+import { useSession } from 'next-auth/react';
 import { createClient, hasSupabaseEnv } from '@/lib/supabase/client';
+import { getReviewDataAction } from '@/lib/actions/classrooms';
 import { useAppStore } from '@/store/app-store';
+import { useGuestStore, isGuestId } from '@/store/guest-store';
 import { generateComment } from '@/lib/generator';
 import type { Template } from '@/lib/types';
 import type { Student } from '@/lib/types';
@@ -12,9 +15,14 @@ import type { Rating } from '@/lib/types';
 import type { Activity } from '@/lib/types';
 
 export default function ReviewPage() {
+  const { data: session, status } = useSession();
   const { classroom, semester, subject, selectedAreaIds } = useAppStore();
   const sub = subject ?? '국어';
   const sem = semester ?? 1;
+
+  const getGuestStudents = useGuestStore((s) => s.getStudents);
+  const getGuestRatings = useGuestStore((s) => s.getRatings);
+  const getGuestActivities = useGuestStore((s) => s.getActivities);
 
   const [students, setStudents] = useState<Student[]>([]);
   const [areas, setAreas] = useState<Area[]>([]);
@@ -29,6 +37,59 @@ export default function ReviewPage() {
   const gptTriggeredRef = useRef(false);
 
   useEffect(() => {
+    if (status === 'loading') return;
+
+    if (classroom && isGuestId(classroom.id)) {
+      setError(null);
+      gptTriggeredRef.current = false;
+      setStudents(getGuestStudents(classroom.id));
+      const ratingMap = getGuestRatings();
+      setRatings(
+        Object.entries(ratingMap).map(([key, level]) => {
+          const [student_id, area_id] = key.split('::');
+          return { student_id, area_id, level };
+        })
+      );
+      setActivities(
+        getGuestActivities(classroom.id, sem, sub).map((a) => ({
+          ...a,
+          classroom_id: classroom.id,
+          semester: sem,
+          subject: sub,
+        })) as Activity[]
+      );
+      if (hasSupabaseEnv()) {
+        const supabase = createClient();
+        Promise.all([
+          supabase.from('areas').select('id, subject, name, order_index, semester').eq('subject', sub).eq('semester', sem).order('order_index'),
+          supabase.from('templates').select('id, area_id, level, sentence'),
+        ]).then(([aRes, tRes]) => {
+          setAreas((aRes.data ?? []) as Area[]);
+          setTemplates((tRes.data ?? []) as Template[]);
+        });
+      }
+      setLoading(false);
+      return;
+    }
+
+    if (classroom && session) {
+      setError(null);
+      gptTriggeredRef.current = false;
+      getReviewDataAction(classroom.id, sem, sub)
+        .then((data) => {
+          if (data) {
+            setStudents(data.students);
+            setAreas(data.areas);
+            setRatings(data.ratings);
+            setTemplates(data.templates);
+            setActivities(data.activities);
+          } else setError('권한이 없거나 데이터를 불러올 수 없습니다.');
+        })
+        .catch((e) => setError((e as Error).message))
+        .finally(() => setLoading(false));
+      return;
+    }
+
     if (!hasSupabaseEnv()) {
       setError('NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY를 .env.local에 설정하세요.');
       setLoading(false);
@@ -37,33 +98,19 @@ export default function ReviewPage() {
     setError(null);
     gptTriggeredRef.current = false;
     const supabase = createClient();
-
     const studentsQuery = classroom
       ? supabase.from('students').select('id, number, name').eq('classroom_id', classroom.id).order('number')
       : supabase.from('students').select('id, number, name').order('number');
-
-    const areasQuery = supabase
-      .from('areas')
-      .select('id, subject, name, order_index, semester')
-      .eq('subject', sub)
-      .eq('semester', sem)
-      .order('order_index');
-
     const activitiesQuery =
       classroom
-        ? supabase
-            .from('activities')
-            .select('id, description')
-            .eq('classroom_id', classroom.id)
-            .eq('semester', sem)
-            .eq('subject', sub)
+        ? supabase.from('activities').select('id, description').eq('classroom_id', classroom.id).eq('semester', sem).eq('subject', sub).order('created_at', { ascending: true })
         : Promise.resolve({ data: [] as Activity[], error: null });
 
     const run = async () => {
       try {
         const [s, a, r, t, act] = await Promise.all([
           studentsQuery,
-          areasQuery,
+          supabase.from('areas').select('id, subject, name, order_index, semester').eq('subject', sub).eq('semester', sem).order('order_index'),
           supabase.from('ratings').select('student_id, area_id, level'),
           supabase.from('templates').select('id, area_id, level, sentence'),
           activitiesQuery,
@@ -88,7 +135,7 @@ export default function ReviewPage() {
       }
     };
     void run();
-  }, [sub, sem, classroom?.id]);
+  }, [sub, sem, classroom?.id, session, status, getGuestStudents, getGuestRatings, getGuestActivities]);
 
   const areasFiltered =
     selectedAreaIds.length > 0
@@ -104,7 +151,7 @@ export default function ReviewPage() {
   const getGeneratedText = (student: Student) => {
     const areaLevels = areasFiltered.map((a) => ({
       areaId: a.id,
-      level: ratingMap[`${student.id}-${a.id}`] ?? '2',
+      level: (ratingMap[`${student.id}-${a.id}`] ?? '2') as '1' | '2' | '3' | '4',
     }));
     return generateComment(areaLevels, templatesForSubject, {
       studentId: student.id,
