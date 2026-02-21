@@ -1,19 +1,34 @@
 /**
  * 메인: 비로그인 시 랜딩(소개+회원가입/구글), 로그인 시 학급 중심 안내
  */
+import { headers } from 'next/headers';
 import { getServerSession } from 'next-auth';
 import Link from 'next/link';
 import { authOptions } from '@/lib/auth';
 import LandingAuth from '@/components/LandingAuth';
 
-export default async function HomePage() {
+type PageProps = { searchParams: Promise<{ error?: string }> };
+
+async function getRequiredRedirectUri() {
+  const headersList = await headers();
+  const host = headersList.get('host') ?? 'localhost:3000';
+  const proto = headersList.get('x-forwarded-proto') ?? (host.includes('localhost') ? 'http' : 'https');
+  return `${proto}://${host}/api/auth/callback/google`;
+}
+
+export default async function HomePage({ searchParams }: PageProps) {
   const session = await getServerSession(authOptions);
+  const params = await searchParams;
+  const requiredRedirectUri = await getRequiredRedirectUri();
 
   if (!session) {
     return (
       <div className="card" style={{ maxWidth: 560, margin: '0 auto' }}>
         <h1 style={{ textAlign: 'center', marginBottom: 8 }}>ReportMate</h1>
-        <LandingAuth />
+        <LandingAuth
+          requiredRedirectUri={requiredRedirectUri}
+          error={params.error}
+        />
       </div>
     );
   }
@@ -31,7 +46,7 @@ export default async function HomePage() {
         <Link href="/classes">3. 등급 입력 → 평어 생성</Link>
       </div>
       <p style={{ marginTop: 24, fontSize: '0.9rem', color: 'var(--color-text-muted)' }}>
-        기존 방식: <Link href="/students" className="link">학생 명단</Link> · <Link href="/ratings" className="link">과목·등급</Link> · <Link href="/review" className="link">평어 생성</Link>
+        학급 목록에서 시작하세요. 학급 → 학기·과목 → 단원 → 등급 → 평어 순서로 진행됩니다.
       </p>
     </div>
   );

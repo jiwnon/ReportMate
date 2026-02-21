@@ -4,8 +4,11 @@ import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { signIn } from 'next-auth/react';
 
-export default function LandingAuth() {
+type Props = { requiredRedirectUri: string; error?: string };
+
+export default function LandingAuth({ requiredRedirectUri, error }: Props) {
   const router = useRouter();
+  const hasError = !!error;
 
   useEffect(() => {
     function onMessage(e: MessageEvent) {
@@ -19,9 +22,9 @@ export default function LandingAuth() {
     return () => window.removeEventListener('message', onMessage);
   }, [router]);
 
-  const handleSignUp = () => {
+  function handleSignIn() {
     signIn('google', { callbackUrl: '/auth/popup-done' });
-  };
+  }
 
   return (
     <div className="landing-auth">
@@ -31,12 +34,24 @@ export default function LandingAuth() {
       <div className="landing-actions">
         <button
           type="button"
+          onClick={handleSignIn}
           className="btn btn-primary landing-btn-google"
-          onClick={handleSignUp}
         >
           <GoogleIcon />
           회원가입
         </button>
+        {hasError && (
+          <div className="landing-error" role="alert">
+            <p style={{ margin: '0 0 8px', fontWeight: 600 }}>Google 로그인에 실패했습니다.</p>
+            <p style={{ margin: 0, fontSize: '0.9rem' }}>
+              <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer">Google Cloud Console → 사용자 인증 정보</a>에서 해당 OAuth 클라이언트를 연 뒤, <strong>승인된 리디렉션 URI</strong>에 아래 주소를 <strong>그대로</strong> 추가하세요.
+            </p>
+            <code className="landing-error-uri">{requiredRedirectUri}</code>
+            <p style={{ margin: '8px 0 0', fontSize: '0.85rem', opacity: 0.9 }}>
+              테스트 앱이면 OAuth 동의 화면에서 <strong>테스트 사용자</strong>에 로그인할 이메일을 추가해야 합니다. .env.local 의 GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET 도 확인하세요.
+            </p>
+          </div>
+        )}
         <p className="landing-hint">
           로그인하면 학급·등급이 저장됩니다. 로그인 없이도 체험할 수 있습니다.
         </p>

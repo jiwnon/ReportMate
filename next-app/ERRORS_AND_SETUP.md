@@ -30,7 +30,8 @@
 | "relation \"public.areas\" does not exist" | 마이그레이션 미적용 | Supabase에서 해당 migration 실행 |
 | /ratings·/review에서 학생/영역 없음 | students·areas 테이블 비어 있음 | /students에서 학생 저장, areas 테이블에 단원 insert |
 | "로드 실패" / 네트워크 에러 | Supabase URL·키 오류 또는 네트워크 | URL·키 확인, 브라우저 콘솔·네트워크 탭 확인 |
-| NEXTAUTH_URL / NO_SECRET 경고, `/api/auth/*` 503 | Google 로그인용 env 없음 | `.env.local`에 `NEXTAUTH_URL=http://localhost:3000`, `NEXTAUTH_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` 넣기. `.env.example` 참고 후 **npm run dev 재시작**. |
+| NEXTAUTH_URL / NO_SECRET 경고, `/api/auth/*` 503 | Google 로그인용 env 없음 | `.env.local`에 `NEXTAUTH_URL=http://localhost:3000`, `NEXTAUTH_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` 넣기. **NEXTAUTH_SECRET은 예시 문구가 아닌** `openssl rand -base64 32` 로 생성한 값 사용. **npm run dev 재시작**. |
+| error=google, "앱이 확인되지 않음" | 테스트 앱인데 다른 계정으로 로그인 | OAuth 동의 화면이 "테스트 중"이면 **테스트 사용자에 등록된 이메일**로만 로그인 가능. (예: alithya0707@gmail.com 만 등록돼 있으면 그 계정으로 로그인) |
 
 ## 5. 실행 방법
 

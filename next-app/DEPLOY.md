@@ -57,19 +57,27 @@
 
 - **비밀 키**: `OPENAI_API_KEY`, `NEXTAUTH_SECRET`, `GOOGLE_CLIENT_SECRET` 는 **절대** 코드·Git에 넣지 말고, **Wrangler Secret** 또는 Dashboard **Encrypted** 에만 설정하세요.
 - **공개 변수**: `NEXT_PUBLIC_*` 는 빌드 시 프론트에 포함되므로, Git 연동 배포 시 Cloudflare 빌드 설정의 **Environment variables** 에 넣어 주세요.
-- **Google 콘솔**: 리디렉션 URI에 `https://report-mate.org/api/auth/callback/google` 를 추가해야 로그인이 동작합니다.
+- **Google 콘솔**: 리디렉션 URI에 아래 **두 개 모두** 추가해야 로그인이 동작합니다 (www 접속 시에도 동작하려면 www 필수).
+  - `https://report-mate.org/api/auth/callback/google`
+  - `https://www.report-mate.org/api/auth/callback/google`
 
 ### 2.3 Google 로그인 점검 (report-mate.org / 로컬)
 
-로그인 버튼을 눌러도 반응이 없거나 오류가 나면 아래를 확인하세요.
+로그인 버튼을 눌러도 반응이 없거나 **error=google** 이 뜨면 아래를 **순서대로** 확인하세요.
+
+0. **★ 테스트 앱이면 로그인 계정이 정해져 있음**  
+   OAuth 동의 화면이 **「테스트 중」**이면, **테스트 사용자에 등록된 이메일**로만 로그인할 수 있습니다.  
+   (예: alithya0707@gmail.com 만 등록돼 있으면 → **반드시 그 계정으로** 로그인. 다른 Gmail이면 "앱이 확인되지 않음" 또는 error=google 로 실패합니다.)
 
 1. **Google Cloud Console** → [APIs & Services → 사용자 인증 정보](https://console.cloud.google.com/apis/credentials)
-   - OAuth 2.0 클라이언트 ID 선택 → **승인된 리디렉션 URI**에 다음이 있는지 확인:
+   - OAuth 2.0 클라이언트 ID 선택 → **승인된 리디렉션 URI**에 **다음 세 개**가 모두 있는지 확인:
      - 로컬: `http://localhost:3000/api/auth/callback/google`
-     - 배포: `https://report-mate.org/api/auth/callback/google`
+     - 배포(비 www): `https://report-mate.org/api/auth/callback/google`
+     - 배포(www): `https://www.report-mate.org/api/auth/callback/google` ← **www로 접속하면 필수**
 2. **OAuth 동의 화면**에서 앱이 "테스트"로 되어 있으면, **테스트 사용자**에 로그인할 Google 이메일을 추가해야 합니다. (미추가 시 "앱이 확인되지 않음" 등으로 로그인 불가)
-3. **로컬**: `next-app/.env.local` 에 `NEXTAUTH_SECRET`, `NEXTAUTH_URL`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` 이 들어 있는지 확인. 수정 후 **반드시 `npm run dev` 를 끄고 다시 실행**.
-4. **배포**: Cloudflare Worker **Variables and Secrets** 에 위 변수/시크릿이 설정되어 있는지 확인. (이미 설정된 경우 재배포만 하면 됨.)
+3. **NEXTAUTH_SECRET**: `your random secret at least 32 chars` 같은 **예시 문구를 그대로 넣으면 안 됩니다.** 터미널에서 `openssl rand -base64 32` 실행 후 나온 값을 넣고, 수정 후 **반드시 `npm run dev` 재시작**.
+4. **로컬**: `next-app/.env.local` 에 `NEXTAUTH_SECRET`, `NEXTAUTH_URL`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` 이 **실제 값**으로 들어 있는지 확인.
+5. **배포**: Cloudflare Worker **Variables and Secrets** 에 NEXTAUTH_SECRET, GOOGLE_CLIENT_SECRET 이 설정되어 있는지 확인. (이미 설정된 경우 재배포만 하면 됨.)
 
 ---
 

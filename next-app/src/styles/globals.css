@@ -78,16 +78,23 @@ body {
 
 .app-nav {
   display: flex;
-  gap: 4px;
+  align-items: center;
+  gap: 2px;
+}
+
+.app-nav-links {
+  display: flex;
+  gap: 2px;
 }
 
 .app-nav a {
-  padding: 8px 14px;
+  padding: 6px 12px;
   border-radius: var(--radius-sm);
   color: var(--color-text-muted);
   text-decoration: none;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   font-weight: 500;
+  white-space: nowrap;
   transition: background .15s, color .15s;
 }
 
@@ -102,11 +109,12 @@ body {
 }
 
 .app-nav .app-nav-btn {
-  padding: 8px 14px;
+  padding: 6px 12px;
   border-radius: var(--radius-sm);
   color: var(--color-text-muted);
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   font-weight: 500;
+  white-space: nowrap;
   background: transparent;
   border: none;
   cursor: pointer;
@@ -493,4 +501,95 @@ input:focus-visible {
   font-size: 0.9rem;
   color: var(--color-text-muted);
   margin: 0;
+}
+.landing-error {
+  font-size: 0.9rem;
+  color: #b91c1c;
+  background: #fef2f2;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  margin: 0 0 12px;
+  text-align: left;
+}
+.landing-error code {
+  font-size: 0.85em;
+  background: #fee2e2;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.landing-error .landing-error-uri {
+  display: block;
+  margin-top: 6px;
+  padding: 8px 10px;
+  word-break: break-all;
+  font-size: 0.85rem;
+}
+
+/* =============================================================================
+   모바일 반응형
+   ============================================================================= */
+
+@media (max-width: 640px) {
+  .app-header {
+    padding: 0 12px;
+  }
+
+  .app-header-inner {
+    height: 48px;
+  }
+
+  .app-logo {
+    font-size: 1.05rem;
+  }
+
+  .app-nav a {
+    padding: 6px 8px;
+    font-size: 0.8rem;
+  }
+
+  .app-nav .app-nav-btn {
+    padding: 6px 8px;
+    font-size: 0.8rem;
+  }
+
+  .app-main {
+    padding: 16px 12px;
+  }
+
+  .card {
+    padding: 16px;
+    border-radius: var(--radius-sm);
+  }
+
+  .card h1 {
+    font-size: 1.15rem;
+  }
+
+  .landing-auth {
+    padding: 32px 16px;
+  }
+
+  .landing-intro {
+    font-size: 1.05rem;
+    margin-bottom: 24px;
+  }
+
+  .step-links {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .step-links a {
+    padding: 12px 16px;
+    font-size: 0.9rem;
+  }
+
+  .review-item {
+    padding: 14px;
+  }
+
+  .btn {
+    padding: 8px 14px;
+    font-size: 0.85rem;
+  }
 }

@@ -90,51 +90,8 @@ export default function ReviewPage() {
       return;
     }
 
-    if (!hasSupabaseEnv()) {
-      setError('NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY를 .env.local에 설정하세요.');
-      setLoading(false);
-      return;
-    }
-    setError(null);
-    gptTriggeredRef.current = false;
-    const supabase = createClient();
-    const studentsQuery = classroom
-      ? supabase.from('students').select('id, number, name').eq('classroom_id', classroom.id).order('number')
-      : supabase.from('students').select('id, number, name').order('number');
-    const activitiesQuery =
-      classroom
-        ? supabase.from('activities').select('id, description').eq('classroom_id', classroom.id).eq('semester', sem).eq('subject', sub).order('created_at', { ascending: true })
-        : Promise.resolve({ data: [] as Activity[], error: null });
-
-    const run = async () => {
-      try {
-        const [s, a, r, t, act] = await Promise.all([
-          studentsQuery,
-          supabase.from('areas').select('id, subject, name, order_index, semester').eq('subject', sub).eq('semester', sem).order('order_index'),
-          supabase.from('ratings').select('student_id, area_id, level'),
-          supabase.from('templates').select('id, area_id, level, sentence'),
-          activitiesQuery,
-        ]);
-        if (s.error) setError(s.error.message);
-        else if (a.error) setError(a.error.message);
-        else if (r.error) setError(r.error.message);
-        else if (t.error) setError(t.error.message);
-        else if ((act as { error?: { message: string } }).error) setError((act as { error: { message: string } }).error.message);
-        else {
-          setStudents((s.data ?? []) as Student[]);
-          setAreas((a.data ?? []) as Area[]);
-          setRatings((r.data ?? []) as Rating[]);
-          setTemplates((t.data ?? []) as Template[]);
-          setActivities(((act as { data?: Activity[] }).data ?? []) as Activity[]);
-          setGptTexts({});
-        }
-      } catch (e) {
-        setError((e as Error)?.message ?? '로드 실패');
-      } finally {
-        setLoading(false);
-      }
-    };
-    void run();
+    setError('학급을 먼저 선택하세요. 학급 목록에서 학급 → 학기 → 과목 → 등급 입력 후 평어를 생성할 수 있습니다.');
+    setLoading(false);
   }, [sub, sem, classroom?.id, session, status, getGuestStudents, getGuestRatings, getGuestActivities]);
 
   const areasFiltered =
