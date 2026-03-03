@@ -91,7 +91,7 @@ export async function getStudentsForClassroomAction(classroomId: string): Promis
   return { classroom, students: (data ?? []) as Student[] };
 }
 
-/** 소유 확인 후 학생 upsert (기존 행 update, 새 행 insert) */
+/** 소유 확인 후 학생 upsert (기존 행 update, 새 행 insert) — 배치 한 번에 처리 */
 export async function upsertStudentsForClassroomAction(
   classroomId: string,
   rows: Array<{ id?: string; number: number; name: string }>
@@ -100,13 +100,16 @@ export async function upsertStudentsForClassroomAction(
   const classroom = await getOwnedClassroom(supabase, classroomId);
   if (!classroom) return { error: '권한이 없습니다.' };
 
-  for (const row of rows) {
-    if (row.id) {
-      await supabase.from('students').update({ number: row.number, name: row.name }).eq('id', row.id);
-    } else {
-      await supabase.from('students').insert({ number: row.number, name: row.name, classroom_id: classroomId }).select('id').single();
-    }
-  }
+  const payloads = rows.map((row) =>
+    row.id
+      ? { id: row.id, classroom_id: classroomId, number: row.number, name: row.name }
+      : { classroom_id: classroomId, number: row.number, name: row.name }
+  );
+  const { error: upsertError } = await supabase
+    .from('students')
+    .upsert(payloads, { onConflict: 'id' });
+  if (upsertError) return { error: upsertError.message };
+
   const { data, error } = await supabase
     .from('students')
     .select('id, number, name')
@@ -242,18 +245,34 @@ export async function getReviewDataAction(
   const classroom = await getOwnedClassroom(supabase, classroomId);
   if (!classroom) return null;
 
-  const [studentsRes, areasRes, ratingsRes, templatesRes, activitiesRes] = await Promise.all([
-    supabase.from('students').select('id, number, name').eq('classroom_id', classroomId).order('number'),
+  const { data: students, error: studentsError } = await supabase
+    .from('students')
+    .select('id, number, name')
+    .eq('classroom_id', classroomId)
+    .order('number');
+  if (studentsError || !students?.length) {
+    if (studentsError) return null;
+    return {
+      students: [],
+      areas: [],
+      ratings: [],
+      templates: [],
+      activities: [],
+    };
+  }
+  const studentIds = students.map((s) => s.id);
+
+  const [areasRes, ratingsRes, templatesRes, activitiesRes] = await Promise.all([
     supabase.from('areas').select('id, subject, name, order_index, semester').eq('subject', subject).eq('semester', semester).order('order_index'),
-    supabase.from('ratings').select('student_id, area_id, level'),
+    supabase.from('ratings').select('student_id, area_id, level').in('student_id', studentIds),
     supabase.from('templates').select('id, area_id, level, sentence'),
     supabase.from('activities').select('id, description, area_id').eq('classroom_id', classroomId).eq('semester', semester).eq('subject', subject).order('created_at', { ascending: true }),
   ]);
 
-  if (studentsRes.error || areasRes.error || ratingsRes.error || templatesRes.error || activitiesRes.error) return null;
+  if (areasRes.error || ratingsRes.error || templatesRes.error || activitiesRes.error) return null;
 
   return {
-    students: (studentsRes.data ?? []) as Student[],
+    students: students as Student[],
     areas: (areasRes.data ?? []) as Area[],
     ratings: (ratingsRes.data ?? []) as Rating[],
     templates: (templatesRes.data ?? []) as Template[],

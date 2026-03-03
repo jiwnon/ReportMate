@@ -4,6 +4,7 @@
  * - 그 외: deterministic (pickSentence, hash 기반)
  */
 import type { Template } from '@/lib/types';
+import { shuffle } from '@/lib/utils';
 
 function hash(s: string): number {
   let h = 0;
@@ -11,15 +12,6 @@ function hash(s: string): number {
     h = ((h << 5) - h + s.charCodeAt(i)) | 0;
   }
   return h;
-}
-
-/** Fisher–Yates shuffle (mutates array) */
-function shuffle<T>(arr: T[]): T[] {
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
-  }
-  return arr;
 }
 
 export function pickSentence(

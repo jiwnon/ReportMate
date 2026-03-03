@@ -8,6 +8,8 @@ import type { Classroom } from '@/lib/types';
 import type { SubjectCode } from '@/lib/types';
 import type { Semester } from '@/lib/types';
 
+const CACHED_REVIEW_KEY = 'reportmate-cachedReview';
+
 type CachedReview = {
   classroomId: string;
   semester: number;
@@ -18,6 +20,26 @@ type CachedReview = {
   /** studentId -> 사용자가 수정한 텍스트 */
   edited: Record<string, string>;
 };
+
+function getCachedReviewFromSession(): CachedReview | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = sessionStorage.getItem(CACHED_REVIEW_KEY);
+    return raw ? (JSON.parse(raw) as CachedReview) : null;
+  } catch {
+    return null;
+  }
+}
+
+function setCachedReviewToSession(cache: CachedReview | null): void {
+  if (typeof window === 'undefined') return;
+  try {
+    if (cache === null) sessionStorage.removeItem(CACHED_REVIEW_KEY);
+    else sessionStorage.setItem(CACHED_REVIEW_KEY, JSON.stringify(cache));
+  } catch {
+    // ignore
+  }
+}
 
 type AppState = {
   /** 현재 선택한 학급 (학급 흐름에서 사용) */
@@ -52,7 +74,7 @@ export const useAppStore = create<AppState>((set) => ({
   levelStep: null,
   studentNames: [],
   grades: {},
-  cachedReview: null,
+  cachedReview: getCachedReviewFromSession(),
   setClassroom: (classroom) => set({ classroom }),
   setSemester: (semester) => set({ semester }),
   setSubject: (subject) => set({ subject }),
@@ -66,5 +88,8 @@ export const useAppStore = create<AppState>((set) => ({
         [`${studentId}-${unit}`]: level,
       },
     })),
-  setCachedReview: (cachedReview) => set({ cachedReview }),
+  setCachedReview: (cachedReview) => {
+    setCachedReviewToSession(cachedReview);
+    set({ cachedReview });
+  },
 }));

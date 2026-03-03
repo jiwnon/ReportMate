@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { parseOpenAIError, shuffle } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,15 +10,6 @@ function getApiKey(): string | null {
   const key = process.env.OPENAI_API_KEY;
   if (!key || typeof key !== 'string' || key.trim() === '') return null;
   return key.trim();
-}
-
-/** Fisher–Yates shuffle (mutates array, returns same ref) */
-function shuffle<T>(arr: T[]): T[] {
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
-  }
-  return arr;
 }
 
 export async function POST(request: NextRequest) {
@@ -114,19 +106,7 @@ ${activitiesText}
         (data?.error as { message?: string })?.message ??
         (typeof data?.error === 'string' ? data.error : null) ??
         res.statusText;
-      const raw = String(errMsg);
-      const message =
-        raw.includes('API key') || raw.includes('Incorrect API key') || raw.includes('invalid_api_key')
-          ? 'OpenAI API 키가 잘못되었거나 만료되었습니다. .env.local의 OPENAI_API_KEY를 확인해 주세요.'
-          : raw.includes('quota') || raw.includes('billing')
-            ? 'OpenAI 사용 한도가 초과되었습니다. OpenAI 대시보드에서 요금제·결제 정보를 확인해 주세요.'
-            : raw.includes('rate limit') || raw.includes('rate_limit')
-              ? 'OpenAI 요청 한도를 초과했습니다. 잠시 후 다시 시도해 주세요.'
-              : /Internal Server Error|500|timeout|ETIMEDOUT/i.test(raw)
-                ? 'OpenAI 서버가 일시적으로 응답하지 않습니다. 잠시 후 다시 시도해 주세요. (status.openai.com 확인)'
-                : /country|region|territory|not supported/i.test(raw)
-                  ? 'OpenAI API가 이 지역에서 제한됩니다. (Worker placement 또는 Cloudflare Regional Services 설정을 확인해 주세요.)'
-                  : raw;
+      const message = parseOpenAIError(String(errMsg));
       return NextResponse.json({ error: message }, { status: 500 });
     }
 
@@ -136,18 +116,7 @@ ${activitiesText}
     return NextResponse.json({ sentence });
   } catch (err) {
     const raw = err instanceof Error ? err.message : '평어 생성 실패';
-    const message =
-      raw.includes('API key') || raw.includes('Incorrect API key') || raw.includes('invalid_api_key')
-        ? 'OpenAI API 키가 잘못되었거나 만료되었습니다. .env.local의 OPENAI_API_KEY를 확인해 주세요.'
-        : raw.includes('quota') || raw.includes('billing')
-          ? 'OpenAI 사용 한도가 초과되었습니다. OpenAI 대시보드에서 요금제·결제 정보를 확인해 주세요.'
-          : raw.includes('rate limit') || raw.includes('rate_limit')
-            ? 'OpenAI 요청 한도를 초과했습니다. 잠시 후 다시 시도해 주세요.'
-            : /Internal Server Error|500|timeout|ETIMEDOUT/i.test(raw)
-              ? 'OpenAI 서버가 일시적으로 응답하지 않습니다. 잠시 후 다시 시도해 주세요. (status.openai.com 확인)'
-              : /country|region|territory|not supported/i.test(raw)
-                ? 'OpenAI API가 이 지역에서 제한됩니다. (Worker가 OpenAI 지원 지역에서 실행되도록 placement 설정됨. 재배포 후에도 발생하면 Cloudflare 대시보드에서 Regional Services를 US/EU로 설정해 보세요.)'
-                : raw;
+    const message = parseOpenAIError(raw);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

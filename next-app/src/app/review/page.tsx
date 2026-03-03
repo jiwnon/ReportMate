@@ -55,6 +55,10 @@ export default function ReviewPage() {
   const [gptTexts, setGptTexts] = useState<Record<string, string>>(matchesCache ? cachedReview!.texts : {});
   const [gptError, setGptError] = useState<string | null>(null);
   const [allowLineBreak, setAllowLineBreak] = useState(true);
+  /** 학생별 재생성 시 pickSentence 다른 문장 선택용 */
+  const [regenerateCountByStudent, setRegenerateCountByStudent] = useState<Record<string, number>>({});
+  /** 재생성 중인 학생 id (로딩 표시·버튼 비활성화용) */
+  const [regeneratingStudentIds, setRegeneratingStudentIds] = useState<Record<string, boolean>>({});
   const gptTriggeredRef = useRef(matchesCache);
 
   useEffect(() => {
@@ -182,6 +186,77 @@ export default function ReviewPage() {
     return limitToLines(full);
   };
 
+  /** 단일 학생 평어 GPT 생성 (초기 일괄·재생성 버튼 공용) */
+  const runGptForOneStudent = async (
+    student: Student,
+    options: { regenerateCount?: number; sentenceIndexMap?: Map<string, number> }
+  ): Promise<{ text: string; error: string | null }> => {
+    const activitiesByAreaId = new Map<string, string[]>();
+    for (const a of activities) {
+      if (!a.area_id || !a.description) continue;
+      if (!activitiesByAreaId.has(a.area_id)) activitiesByAreaId.set(a.area_id, []);
+      activitiesByAreaId.get(a.area_id)!.push(a.description);
+    }
+    const commentLines = generateCommentLines(getAreaLevels(student), templatesForSubject, {
+      studentId: student.id,
+      regenerateCount: options.regenerateCount ?? 0,
+      sentenceIndexMap: options.sentenceIndexMap,
+    });
+    if (commentLines.length === 0) {
+      return {
+        text: '(등급에 해당하는 평어 문장이 없습니다. 단원·등급·시드 데이터를 확인하세요.)',
+        error: null,
+      };
+    }
+    const settled = await Promise.allSettled(
+      commentLines.map(async (line) => {
+        const areaActivities = activitiesByAreaId.get(line.areaId);
+        if (!areaActivities || areaActivities.length === 0) {
+          return { sentence: line.sentence, error: null as string | null };
+        }
+        try {
+          const res = await fetch('/api/generate-comment', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              templateSentence: line.sentence,
+              activities: areaActivities,
+              areaId: line.areaId,
+              level: line.level,
+            }),
+          });
+          const text = await res.text();
+          const data = (() => { try { return JSON.parse(text); } catch { return {}; } })();
+          if (!res.ok || data.error) {
+            const errMsg = typeof data?.error === 'string' ? data.error : (res.status === 500 && text && text.length < 200 ? text : null);
+            return { sentence: line.sentence, error: errMsg };
+          }
+          return { sentence: data.sentence ?? line.sentence, error: null };
+        } catch (e) {
+          return { sentence: line.sentence, error: e instanceof Error ? e.message : '네트워크 오류' };
+        }
+      })
+    );
+    const results: string[] = [];
+    let firstError: string | null = null;
+    for (let i = 0; i < settled.length; i++) {
+      const outcome = settled[i];
+      const fallback = commentLines[i]?.sentence ?? '';
+      if (outcome.status === 'rejected') {
+        firstError = firstError ?? outcome.reason?.message ?? 'Unknown error';
+        results.push(fallback);
+        continue;
+      }
+      const v = outcome.value;
+      results.push(v.sentence);
+      if (v.error) firstError = firstError ?? v.error;
+    }
+    const joined = results.join('\n');
+    const lines = joined.split('\n').filter(Boolean);
+    const limited = lines.slice(0, MAX_COMMENT_LINES).join('\n');
+    return { text: limited, error: firstError };
+  };
+
   const hasAnyActivity = activities.length > 0;
 
   useEffect(() => {
@@ -195,10 +270,7 @@ export default function ReviewPage() {
       if (!activitiesByAreaId.has(a.area_id)) activitiesByAreaId.set(a.area_id, []);
       activitiesByAreaId.get(a.area_id)!.push(a.description);
     }
-
-    if (activitiesByAreaId.size === 0) {
-      return;
-    }
+    if (activitiesByAreaId.size === 0) return;
 
     const run = async () => {
       for (const student of students) {
@@ -207,52 +279,15 @@ export default function ReviewPage() {
       let hadError = false;
       let firstErrorMessage: string | null = null;
       for (const student of students) {
-        const commentLines = generateCommentLines(getAreaLevels(student), templatesForSubject, {
-          studentId: student.id,
+        const { text, error } = await runGptForOneStudent(student, {
+          regenerateCount: 0,
           sentenceIndexMap: sentenceAssignment.get(student.id) ?? undefined,
         });
-        if (commentLines.length === 0) {
-          setGptTexts((prev) => ({ ...prev, [student.id]: '(등급에 해당하는 평어 문장이 없습니다. 단원·등급·시드 데이터를 확인하세요.)' }));
-          continue;
+        setGptTexts((prev) => ({ ...prev, [student.id]: text }));
+        if (error) {
+          hadError = true;
+          if (!firstErrorMessage) firstErrorMessage = error;
         }
-        const results: string[] = [];
-        for (const line of commentLines) {
-          const areaActivities = activitiesByAreaId.get(line.areaId);
-          if (!areaActivities || areaActivities.length === 0) {
-            results.push(line.sentence);
-            continue;
-          }
-          try {
-            const res = await fetch('/api/generate-comment', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                templateSentence: line.sentence,
-                activities: areaActivities,
-                areaId: line.areaId,
-                level: line.level,
-              }),
-            });
-            const text = await res.text();
-            const data = (() => { try { return JSON.parse(text); } catch { return {}; } })();
-            if (!res.ok || data.error) {
-              hadError = true;
-              const errMsg = typeof data?.error === 'string' ? data.error : (res.status === 500 && text && text.length < 200 ? text : null);
-              if (errMsg && !firstErrorMessage) firstErrorMessage = errMsg;
-              results.push(line.sentence);
-            } else {
-              results.push(data.sentence ?? line.sentence);
-            }
-          } catch (e) {
-            hadError = true;
-            if (!firstErrorMessage) firstErrorMessage = e instanceof Error ? e.message : '네트워크 오류';
-            results.push(line.sentence);
-          }
-        }
-        const joined = results.join('\n');
-        const lines = joined.split('\n').filter(Boolean);
-        const limited = lines.slice(0, MAX_COMMENT_LINES).join('\n');
-        setGptTexts((prev) => ({ ...prev, [student.id]: limited }));
       }
       if (hadError) {
         const friendly =
@@ -308,6 +343,33 @@ export default function ReviewPage() {
 
   const setDisplayText = (studentId: string, text: string) => {
     setEditedTexts((prev) => ({ ...prev, [studentId]: text }));
+  };
+
+  const handleRegenerate = (student: Student) => {
+    const studentId = student.id;
+    setGptTexts((prev) => ({ ...prev, [studentId]: '' }));
+    setEditedTexts((prev) => {
+      const next = { ...prev };
+      delete next[studentId];
+      return next;
+    });
+    setRegeneratingStudentIds((prev) => ({ ...prev, [studentId]: true }));
+    const nextCount = (regenerateCountByStudent[studentId] ?? 0) + 1;
+    setRegenerateCountByStudent((prev) => ({ ...prev, [studentId]: nextCount }));
+
+    runGptForOneStudent(student, { regenerateCount: nextCount })
+      .then(({ text, error }) => {
+        setGptTexts((prev) => ({ ...prev, [studentId]: text }));
+        if (error) {
+          const friendly = /Internal Server Error|500|timeout|ETIMEDOUT/i.test(error)
+            ? 'OpenAI 서버가 일시적으로 응답하지 않습니다. 잠시 후 다시 시도해 주세요.'
+            : error;
+          setGptError(`학습 활동 반영 실패: ${friendly}`);
+        }
+      })
+      .finally(() => {
+        setRegeneratingStudentIds((prev) => ({ ...prev, [studentId]: false }));
+      });
   };
 
   const isGptLoading = students.some((st) => st.id in gptTexts && gptTexts[st.id] === '');
@@ -397,6 +459,14 @@ export default function ReviewPage() {
             <div className="review-item-header">
               <span className="review-item-title">{st.number}. {st.name}</span>
               <div className="review-item-actions">
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => handleRegenerate(st)}
+                  disabled={regeneratingStudentIds[st.id] || getRawText(st) === '평어 생성 중...'}
+                >
+                  재생성
+                </button>
                 <button
                   type="button"
                   className="btn btn-secondary"
