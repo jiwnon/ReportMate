@@ -246,3 +246,9 @@ UI 등급 표기: **1=매우잘함, 2=잘함, 3=보통, 4=노력요함.**
   - 2학기 국어·수학·통합: `node scripts/seed-2학기-평어.mjs` (next-app 폴더에서, `seed-data/1학년-2학기/` 사용)
   - `.env.local`에 Supabase URL/Anon Key 필요
 - **DB 정리 SQL**: orphan 학생 삭제 → `DELETE FROM ratings WHERE student_id IN (SELECT id FROM students WHERE classroom_id IS NULL); DELETE FROM students WHERE classroom_id IS NULL;`
+
+---
+
+## 변경 이력
+
+- **2025-03-03**: `.cursor/rules/commit-and-push.mdc` 추가 — 커밋·푸시 시마다 progress.md 맨 아래에 날짜·작업 요약 추가 후 같은 커밋에 포함하도록 규칙 정의.
