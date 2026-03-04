@@ -15,6 +15,25 @@ import type { Area } from '@/lib/types';
 import type { Rating } from '@/lib/types';
 import type { Activity } from '@/lib/types';
 
+/**
+ * 활동을 학생 수로 N등분해, studentNumber 순서에 따라 해당 학생에게 배정할 활동 1개 반환.
+ * 활동 1개면 전원 동일하게 해당 활동 반환.
+ */
+function assignActivityToStudent(
+  studentNumber: number,
+  allStudentNumbers: number[],
+  activities: string[]
+): string {
+  if (activities.length === 0) return '';
+  if (activities.length === 1) return activities[0];
+  const idx = allStudentNumbers.indexOf(studentNumber);
+  if (idx === -1) return activities[0];
+  const N = activities.length;
+  const M = allStudentNumbers.length;
+  const activityIndex = Math.min(Math.floor((idx * N) / M), N - 1);
+  return activities[activityIndex] ?? activities[0];
+}
+
 export default function ReviewPage() {
   const { data: session, status } = useSession();
   const { classroom, semester, subject, selectedAreaIds, cachedReview, setCachedReview } = useAppStore();
@@ -183,17 +202,40 @@ export default function ReviewPage() {
     return limitToLines(full);
   };
 
-  /** 단일 학생 평어 GPT 생성 (초기 일괄·재생성 버튼 공용) */
+  /** 단일 학생 평어 GPT 생성 (초기 일괄·재생성 버튼 공용). 활동은 A(단원 지정)/B(미지정) 그룹으로 나누어 학생별 1개씩 배정. */
   const runGptForOneStudent = async (
     student: Student,
     options: { regenerateCount?: number; sentenceIndexMap?: Map<string, number> }
   ): Promise<{ text: string; error: string | null }> => {
     const activitiesByAreaId = new Map<string, string[]>();
+    const activitiesNoArea: string[] = [];
     for (const a of activities) {
-      if (!a.area_id || !a.description) continue;
-      if (!activitiesByAreaId.has(a.area_id)) activitiesByAreaId.set(a.area_id, []);
-      activitiesByAreaId.get(a.area_id)!.push(a.description);
+      if (!a.description?.trim()) continue;
+      if (a.area_id) {
+        if (!activitiesByAreaId.has(a.area_id)) activitiesByAreaId.set(a.area_id, []);
+        activitiesByAreaId.get(a.area_id)!.push(a.description.trim());
+      } else {
+        activitiesNoArea.push(a.description.trim());
+      }
     }
+
+    const allStudentNumbers = [...students].map((s) => s.number).sort((a, b) => a - b);
+    const studentNumbersByAreaId = new Map<string, number[]>();
+    if (isIntegrated) {
+      for (const areaId of areaIds) {
+        const studentIds = [...new Set(ratings.filter((r) => r.area_id === areaId).map((r) => r.student_id))];
+        const nums = studentIds
+          .map((sid) => students.find((s) => s.id === sid)?.number)
+          .filter((n): n is number => n != null)
+          .sort((a, b) => a - b);
+        studentNumbersByAreaId.set(areaId, nums.length ? nums : allStudentNumbers);
+      }
+    } else {
+      for (const areaId of areaIds) {
+        studentNumbersByAreaId.set(areaId, allStudentNumbers);
+      }
+    }
+
     const commentLines = generateCommentLines(getAreaLevels(student), templatesForSubject, {
       studentId: student.id,
       regenerateCount: options.regenerateCount ?? 0,
@@ -207,8 +249,12 @@ export default function ReviewPage() {
     }
     const settled = await Promise.allSettled(
       commentLines.map(async (line) => {
-        const areaActivities = activitiesByAreaId.get(line.areaId);
-        if (!areaActivities || areaActivities.length === 0) {
+        const areaActivities = activitiesByAreaId.get(line.areaId) ?? [];
+        const targetNumbersA = studentNumbersByAreaId.get(line.areaId) ?? allStudentNumbers;
+        const assignedA = assignActivityToStudent(student.number, targetNumbersA, areaActivities);
+        const assignedB = assignActivityToStudent(student.number, allStudentNumbers, activitiesNoArea);
+        const activitiesToSend = [assignedA, assignedB].filter(Boolean);
+        if (activitiesToSend.length === 0) {
           return { sentence: line.sentence, error: null as string | null };
         }
         try {
@@ -217,7 +263,7 @@ export default function ReviewPage() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               templateSentence: line.sentence,
-              activities: areaActivities,
+              activities: activitiesToSend,
               areaId: line.areaId,
               level: line.level,
             }),
@@ -260,14 +306,6 @@ export default function ReviewPage() {
     if (loading || !hasAnyActivity || students.length === 0 || gptTriggeredRef.current) return;
     gptTriggeredRef.current = true;
     setGptError(null);
-
-    const activitiesByAreaId = new Map<string, string[]>();
-    for (const a of activities) {
-      if (!a.area_id || !a.description) continue;
-      if (!activitiesByAreaId.has(a.area_id)) activitiesByAreaId.set(a.area_id, []);
-      activitiesByAreaId.get(a.area_id)!.push(a.description);
-    }
-    if (activitiesByAreaId.size === 0) return;
 
     const run = async () => {
       for (const student of students) {
