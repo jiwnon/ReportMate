@@ -21,10 +21,6 @@ export default function ReviewPage() {
   const sub = subject ?? '국어';
   const sem = semester ?? 1;
 
-  const getGuestStudents = useGuestStore((s) => s.getStudents);
-  const getGuestRatings = useGuestStore((s) => s.getRatings);
-  const getGuestActivities = useGuestStore((s) => s.getActivities);
-
   const cacheKey = useMemo(() => {
     if (!classroom) return '';
     const ids = [...selectedAreaIds].sort().join(',');
@@ -65,10 +61,11 @@ export default function ReviewPage() {
     if (status === 'loading') return;
 
     if (classroom && isGuestId(classroom.id)) {
+      const guest = useGuestStore.getState();
       setError(null);
       if (!matchesCache) gptTriggeredRef.current = false;
-      setStudents(getGuestStudents(classroom.id));
-      const ratingMap = getGuestRatings();
+      setStudents(guest.getStudents(classroom.id));
+      const ratingMap = guest.getRatings();
       setRatings(
         Object.entries(ratingMap).map(([key, level]) => {
           const [student_id, area_id] = key.split('::');
@@ -76,7 +73,7 @@ export default function ReviewPage() {
         })
       );
       setActivities(
-        getGuestActivities(classroom.id, sem, sub).map((a) => ({
+        guest.getActivities(classroom.id, sem, sub).map((a) => ({
           ...a,
           classroom_id: classroom.id,
           semester: sem,
@@ -119,7 +116,7 @@ export default function ReviewPage() {
 
     setError('학급을 먼저 선택하세요. 학급 목록에서 학급 → 학기 → 과목 → 등급 입력 후 평어를 생성할 수 있습니다.');
     setLoading(false);
-  }, [sub, sem, classroom?.id, session, status, getGuestStudents, getGuestRatings, getGuestActivities]);
+  }, [sub, sem, classroom?.id, session, status]);
 
   const isIntegrated = sub === '통합';
   const areaIds = useMemo(() => {
@@ -304,20 +301,32 @@ export default function ReviewPage() {
     void run();
   }, [loading, hasAnyActivity, students.length, activities]);
 
-  // 평어가 변경될 때마다 캐시에 저장
+  // 평어가 변경될 때마다 캐시에 저장 (변경 시에만 setCachedReview 호출해 무한 사이클 방지)
   useEffect(() => {
     if (!classroom || loading) return;
     const hasTexts = Object.keys(gptTexts).length > 0 || Object.keys(editedTexts).length > 0;
     if (!hasTexts) return;
-    setCachedReview({
+    const next = {
       classroomId: classroom.id,
       semester: sem,
       subject: sub,
       areaIds: selectedAreaIds,
       texts: gptTexts,
       edited: editedTexts,
-    });
-  }, [gptTexts, editedTexts]);
+    };
+    const cur = useAppStore.getState().cachedReview;
+    if (
+      cur?.classroomId === next.classroomId &&
+      cur?.semester === next.semester &&
+      cur?.subject === next.subject &&
+      JSON.stringify([...cur.areaIds].sort()) === JSON.stringify([...next.areaIds].sort()) &&
+      JSON.stringify(cur.texts) === JSON.stringify(next.texts) &&
+      JSON.stringify(cur.edited) === JSON.stringify(next.edited)
+    ) {
+      return;
+    }
+    setCachedReview(next);
+  }, [gptTexts, editedTexts, classroom?.id, sem, sub, selectedAreaIds, loading]);
 
   const getRawText = (student: Student) => {
     if (editedTexts[student.id] != null) return editedTexts[student.id];
